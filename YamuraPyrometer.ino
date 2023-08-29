@@ -1,23 +1,19 @@
 /*
-  YamuraLog Just a Tire Pyrometer
+  YamuraLog Recording Tire Pyrometer
   By: Brian Smith
   Yamura Electronics Division
   Date: July 2023
   License: This code is public domain but you buy me a beer if you use this and we meet someday (Beerware License).
-
-  Hardware Connections:
-  Attach the Qwiic Shield to your Arduino/Photon/ESP32 or other
-  Plug the sensor onto the shield
-  Serial.print it out at 115200 baud to serial monitor.
-
-  Operation
-  Just display probe temps when on
 
 */
 
 #include <SparkFun_MCP9600.h>
 #include <SparkFun_Qwiic_OLED.h> //http://librarymanager/All#SparkFun_Qwiic_Graphic_OLED
 #include "InputDebounce.h"
+#include "FS.h"
+#include "SD.h"
+#include "SPI.h"
+
 // OLED Fonts
 #include <res/qw_fnt_5x7.h>
 #include <res/qw_fnt_8x16.h>
@@ -25,18 +21,44 @@
 #include <res/qw_fnt_7segment.h>
 #include <res/qw_fnt_largenum.h>
 
+// uncomment for debug to serial monitor
+//#define DEBUG_VERBOSE
+
 #define TEMPSTABLE_LED 4
 #define BUTTON_1 12
 #define BUTTON_2 27
 #define BUTTON_3 33
 #define BUTTON_4 15
 #define BUTTON_DEBOUNCE_DELAY   20   // [ms]
-
 #define BUTTON_COUNT 4
+
+#define DISPLAY_MENU 0
+#define SELECT_CAR 1
+#define MEASURE_TIRES 2
+#define DISPLAY_TIRES 3
+#define DISPLAY_RESULTS 4
+
 static InputDebounce buttonArray[BUTTON_COUNT];
 int buttonPin[BUTTON_COUNT] = {BUTTON_1, BUTTON_2, BUTTON_3, BUTTON_4};
 int buttonReleased[BUTTON_COUNT] = {0, 0, 0, 0};
 unsigned long pressDuration[BUTTON_COUNT] = {0, 0, 0, 0};
+
+// car info structure
+struct CarSettings
+{
+    String carName;
+    int tireCount;
+    String* tireShortName;
+    String* tireLongName;
+    int positionCount;
+    String* positionShortName;
+    String* positionLongName;
+};
+CarSettings* cars;
+// dynamic tire temp array
+float* tireTemps;
+
+String curMenu[50];
 
 // devices
 MCP9600 tempSensor;
@@ -53,9 +75,6 @@ QwiicFont *demoFonts[] = {
 int nFONTS = sizeof(demoFonts) / sizeof(demoFonts[0]);
 int iFont = 1;
 
-#define TIRE_COUNT 4
-#define MEASURE_COUNT 3
-
 unsigned long prior = 0;
 
 int tempIdx = 0;
@@ -63,22 +82,27 @@ float tempStableRecent[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 float tempStableMinMax[2] = {150.0, -150.0};
 bool tempStable = false;
 
+int carCount = 0;
+int selectedCar = 0;
 int tireIdx = 0;
 int measIdx = 0;
-float tireTemps[TIRE_COUNT][MEASURE_COUNT] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+//float tireTemps[TIRE_COUNT][MEASURE_COUNT] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
 float tempRes = 1.0;
-String tireShortName[TIRE_COUNT] = {"RF", "LF", "RR", "LR"};
-String tireLongName[TIRE_COUNT] = {"Right Front", "Left Front", "Left Rear", "Right Rear"};
-String tirePos[MEASURE_COUNT] = {"O", "M", "I"};
+//String tireShortName[TIRE_COUNT] = {"RF", "LF", "RR", "LR"};
+//String tireLongName[TIRE_COUNT] = {"Right Front", "Left Front", "Left Rear", "Right Rear"};
+//String tirePos[MEASURE_COUNT] = {"O", "M", "I"};
+int deviceState = 0;
 //
 //
 //
 void setup()
 {
   Serial.begin(115200);
+  #ifdef DEBUG_VERBOSE
   Serial.println();
   Serial.println();
   Serial.println("YamuraLog Recording Tire Pyrometer V1.0");
+  #endif
 
   pinMode(TEMPSTABLE_LED, OUTPUT);
 
@@ -98,10 +122,15 @@ void setup()
 
   Wire.begin();             // start I2C
   // Initalize the OLED device and related graphics system
-  if (oledDisplay.begin(Wire, 0x3C) == false)
+  while (!oledDisplay.begin(Wire, 0x3C))
   {
+    #ifdef DEBUG_VERBOSE
     Serial.println("Device begin failed. Freezing...");
-    while (true);
+    #endif
+    digitalWrite(TEMPSTABLE_LED, HIGH);
+    delay(200);
+    digitalWrite(TEMPSTABLE_LED, LOW);
+    delay(200);
   }
 
   iFont = 0;
@@ -111,188 +140,327 @@ void setup()
   oledDisplay.text(0, oledDisplay.getStringHeight("X"), "Recording Pyrometer");
   oledDisplay.display();
   delay(10000);
+  #ifdef DEBUG_VERBOSE
   Serial.print("OLED screen size ");
   Serial.print(oledDisplay.getWidth());
   Serial.print(" x ");
   Serial.print(oledDisplay.getHeight());
   Serial.println("");
-
+  #endif
 
   tempSensor.begin();       // Uses the default address (0x60) for SparkFun Thermocouple Amplifier
   //check if the sensor is connected
   if(tempSensor.isConnected())
   {
-      Serial.println("Device will acknowledge!");
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Device acknowledged!");
+    #endif
   }
   else 
   {
+    #ifdef DEBUG_VERBOSE
     Serial.println("Device did not acknowledge! Freezing.");
+    #endif
     while(1); //hang forever
   }
 
   //check if the Device ID is correct
   if(tempSensor.checkDeviceID())
   {
+    #ifdef DEBUG_VERBOSE
     Serial.println("Device ID is correct!");        
+    #endif
   }
   else 
   {
+    #ifdef DEBUG_VERBOSE
     Serial.println("Device ID is not correct! Freezing.");
+    #endif
     while(1);
   }
   //change the thermocouple type being used
+  #ifdef DEBUG_VERBOSE
   Serial.print("Current Thermocouple Type: ");
+  #endif
   switch(tempSensor.getThermocoupleType())
   {
     case 0b000:
+      #ifdef DEBUG_VERBOSE
       Serial.println("K Type");
+      #endif
       break;
     case 0b001:
+      #ifdef DEBUG_VERBOSE
       Serial.println("J Type");
+      #endif
       break;
     case 0b010:
+      #ifdef DEBUG_VERBOSE
       Serial.println("T Type");
+      #endif
       break;
     case 0b011:
+      #ifdef DEBUG_VERBOSE
       Serial.println("N Type");
+      #endif
       break;
     case 0b100:
+      #ifdef DEBUG_VERBOSE
       Serial.println("S Type");
+      #endif
       break;
     case 0b101:
+      #ifdef DEBUG_VERBOSE
       Serial.println("E Type");
+      #endif
       break;
     case 0b110:
+      #ifdef DEBUG_VERBOSE
       Serial.println("B Type");
+      #endif
       break;
     case 0b111:
+      #ifdef DEBUG_VERBOSE
       Serial.println("R Type");
+      #endif
       break;
     default:
+      #ifdef DEBUG_VERBOSE
       Serial.println("Unknown Thermocouple Type");
+      #endif
       break;
   }
   if(tempSensor.getThermocoupleType() != TYPE_K)
   {
+    #ifdef DEBUG_VERBOSE
     Serial.println("Setting Thermocouple Type to K (0b000)");
+    #endif
     tempSensor.setThermocoupleType(TYPE_K);
     //make sure the type was set correctly!
     if(tempSensor.getThermocoupleType() == TYPE_K)
     {
-        Serial.println("Thermocouple Type set sucessfully!");
+      #ifdef DEBUG_VERBOSE
+      Serial.println("Thermocouple Type set sucessfully!");
+      #endif
     }
     else
     {
+      #ifdef DEBUG_VERBOSE
       Serial.println("Setting Thermocouple Type failed!");
+      #endif
     }
   }
+  #ifdef DEBUG_VERBOSE
   Serial.print("Ambient resolution ");
+  #endif
   switch(tempSensor.getAmbientResolution())
   {
     case RES_ZERO_POINT_0625:
+      #ifdef DEBUG_VERBOSE
       Serial.print(" 0.0625C / 0.1125F");
+      #endif
       tempRes = 0.1125;
       break;
     case RES_ZERO_POINT_25:
+      #ifdef DEBUG_VERBOSE
       Serial.print(" 0.25 C / 0.45F");
+      #endif
       tempRes = 0.45;
       break;
     default:
+      #ifdef DEBUG_VERBOSE
       Serial.print(" unknown ");
+      #endif
       break;
   }
+  #ifdef DEBUG_VERBOSE
   Serial.print(" Thermocouple resolution ");
+  #endif
   switch(tempSensor.getThermocoupleResolution())
   {
     case RES_12_BIT:
+      #ifdef DEBUG_VERBOSE
       Serial.print(" 12 bit");
+      #endif
       break;
     case RES_14_BIT:
+      #ifdef DEBUG_VERBOSE
       Serial.print(" 14 bit");
+      #endif
       break;
     case RES_16_BIT:
+      #ifdef DEBUG_VERBOSE
       Serial.print(" 16 bit");
+      #endif
       break;
     case RES_18_BIT:
+      #ifdef DEBUG_VERBOSE
       Serial.print(" 18 bit");
+      #endif
       break;
     default:
+      #ifdef DEBUG_VERBOSE
       Serial.print(" unknown ");
+      #endif
       break;
   }
   Serial.println();
 
+  if(!SD.begin(5))
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Card Mount Failed");
+    #endif
+    return;
+  }
+  uint8_t cardType = SD.cardType();
+  if(cardType == CARD_NONE)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("No SD card attached");
+    #endif
+    return;
+  }
+  #ifdef DEBUG_VERBOSE
+  Serial.print("SD Card Type: ");
+  #endif
+  if(cardType == CARD_MMC)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("MMC");
+    #endif
+  }
+  else if(cardType == CARD_SD)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("SDSC");
+    #endif
+  }
+  else if(cardType == CARD_SDHC)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("SDHC");
+    #endif
+  } 
+  else 
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("UNKNOWN");
+    #endif
+  }
+  uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+
+  #ifdef DEBUG_VERBOSE
+  Serial.printf("SD Card Size: %lluMB\n", cardSize);
+  #endif
+  // uncomment to write a default setup file
+  // maybe check for setup and write one if needed?
+  //deleteFile(SD, "/py_setup.txt");
+  //WriteSetupFile(SD, "/py_setup.txt");
+  ReadSetupFile(SD,  "/py_setup.txt");
+
   ResetTempStable();
 
+  #ifdef DEBUG_VERBOSE
   Serial.println();
   Serial.println("Ready!");
+  #endif
   oledDisplay.erase();
   oledDisplay.text(0, 0, "Ready!");
   oledDisplay.display();
   delay(1000);
   prior = millis();
-  MeasureTimeTemp();
-  DisplayTireTemps();
+  deviceState = DISPLAY_MENU;
 }
 //
 //print the thermocouple, ambient and delta temperatures every 200ms if available
 //
 void loop()
 {
+  switch (deviceState)
+  {
+    case DISPLAY_MENU:
+      DisplayMenu();
+      break;
+    case SELECT_CAR:
+      SelectCar();
+      deviceState = DISPLAY_MENU;
+      break;
+    case MEASURE_TIRES:
+      MeasureTireTemps();
+      deviceState = DISPLAY_RESULTS;
+      break;
+    case DISPLAY_TIRES:
+      DisplayTireTemps();
+      deviceState = DISPLAY_MENU;
+      break;
+    case DISPLAY_RESULTS:
+      ReadResults(SD, "/py_temps.txt");
+      deviceState = DISPLAY_MENU;
+      break;
+    default:
+      break;
+  }
 }
-void MeasureTimeTemp()
+//
+//
+//
+void DisplayMenu()
+{
+  curMenu[0] = "Car/Driver";
+  curMenu[1] = "Measure Temps";
+  curMenu[2] = "Display Temps";
+  curMenu[3] = "Display Results";
+  deviceState =  MenuSelect(curMenu, 4, 3, 0, 15) + 1; 
+}
+//
+// 
+//
+void MeasureTireTemps()
 {
   char outStr[512];
   tireIdx = 0;  // tire - RF, LF, RR, LR  
+  int textPosition[2] = {0, 0};
+
   // local measurement array, allow preserve measurements on cancel
-  float localTemps[TIRE_COUNT][MEASURE_COUNT];
-  for(int idxTire = 0; idxTire < TIRE_COUNT; idxTire++)
+  float localTemps[48];
+  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
   {
-    for(int idxMeas = 0; idxMeas < MEASURE_COUNT; idxMeas++)
+    for(int idxMeas = 0; idxMeas < cars[selectedCar].positionCount; idxMeas++)
     {
-      localTemps[idxTire][idxMeas] = 0.0;
+      localTemps[idxTire * cars[selectedCar].tireCount + idxMeas] = 0.0;
     }
   }
-  //
-  while(tireIdx < TIRE_COUNT)
+  // measure defined tires
+  #ifdef DEBUG_VERBOSE
+  sprintf(outStr, "Selected car %s tire count %d positions %d\n", cars[selectedCar].carName, cars[selectedCar].tireCount, cars[selectedCar].positionCount);
+  Serial.print(outStr);
+  #endif
+  while(tireIdx < cars[selectedCar].tireCount)
   {
     // text font
     iFont = 1;
    
     measIdx = 0;  // measure location - O, M, I
-    for(int idx = 0; idx < 3; idx++)
+    for(int idx = 0; idx < cars[selectedCar].positionCount; idx++)
     {
-      localTemps[tireIdx][idx] = 0.0;
+      localTemps[tireIdx * cars[selectedCar].tireCount + idx] = 0.0;
     }
     ResetTempStable();
     digitalWrite(TEMPSTABLE_LED, LOW);
     unsigned long priorTime = 0;
     unsigned long curTime = 0;
-    //
-    int xText = 0;
-    int yText = 0;
-    bool displayed = false;
-    // 
+    // text position on OLED screen
+    textPosition[0] = 0;
+    textPosition[1] = 0;
+    // measure  defined positions on tire 
     while(true)
     {
-      if(!displayed)
-      {
-        Serial.print("Measuring tire ");
-        Serial.print(tireLongName[tireIdx]);
-        Serial.print(" (");
-        Serial.print(tireIdx);
-        Serial.print(") ");
-        Serial.print("position ");
-        Serial.print(tirePos[measIdx]);
-        Serial.print(" (");
-        Serial.print(measIdx);
-        Serial.println(")");
-        displayed = true;
-      }
       // get time and process buttons for press/release
       curTime = millis();
       for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
       {
+        buttonReleased[btnIdx] = false;
         buttonArray[btnIdx].process(curTime);
       }
       // cancel button released, return
@@ -308,15 +476,13 @@ void MeasureTimeTemp()
         digitalWrite(TEMPSTABLE_LED, HIGH);
         if (buttonReleased[0])
         {
-          buttonReleased[0] = false;
-          displayed = false;
-          if(measIdx == 2)
+          measIdx++;
+          if(measIdx == cars[selectedCar].positionCount)
           {
             measIdx = 0;
             break;
           }
-          measIdx++;
-          localTemps[tireIdx][measIdx] = 0;
+          localTemps[tireIdx * cars[selectedCar].tireCount + measIdx] = 0;
           ResetTempStable();
           digitalWrite(TEMPSTABLE_LED, LOW);
         }
@@ -326,34 +492,34 @@ void MeasureTimeTemp()
         buttonReleased[0] = false;
         digitalWrite(TEMPSTABLE_LED, LOW);
       }
-      // sample temp every .25 seconds, check for stable temp
-      if((curTime - priorTime) > 250)
+      // if not stablized. sample temp every .5 second, check for stable temp
+      if(!tempStable && (curTime - priorTime) > 500)
       {
         priorTime = curTime;
         curTime = millis();
         // read temp, check for stable temp, light LED if stable
-        localTemps[tireIdx][measIdx] = tempSensor.getThermocoupleTemp(false); // false for F, true or empty for C
-        tempStable = CheckTempStable(localTemps[tireIdx][measIdx]);
+        localTemps[tireIdx * cars[selectedCar].tireCount + measIdx] = tempSensor.getThermocoupleTemp(false); // false for F, true or empty for C
+        tempStable = CheckTempStable(localTemps[tireIdx * cars[selectedCar].tireCount + measIdx]);
         // text string location
-        xText = 0;
-        yText = 0;
+        textPosition[0] = 0;
+        textPosition[1] = 0;
         oledDisplay.setFont(demoFonts[iFont]);  
         oledDisplay.erase();
-        oledDisplay.text(xText, yText, tireLongName[tireIdx]);
-        yText +=  oledDisplay.getStringHeight(outStr);
+        oledDisplay.text(textPosition[0], textPosition[1], cars[selectedCar].tireLongName[tireIdx]);
+        textPosition[1] +=  oledDisplay.getStringHeight(outStr);
 
-        for(int tirePosIdx = 0; tirePosIdx < MEASURE_COUNT; tirePosIdx++)
+        for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
         {
-          if(localTemps[tireIdx][tirePosIdx] > 0.0)
+          if(localTemps[tireIdx * cars[selectedCar].tireCount + tirePosIdx] > 0.0)
           {
-            sprintf(outStr, "%s %s: %3.1F", tireShortName[tireIdx], tirePos[tirePosIdx], localTemps[tireIdx][tirePosIdx]);
+            sprintf(outStr, "%s %s: %3.1F", cars[selectedCar].tireShortName[tireIdx], cars[selectedCar].positionShortName[tirePosIdx], localTemps[cars[selectedCar].tireCount * tireIdx + tirePosIdx]);
           } 
           else
           {
-            sprintf(outStr, "%s %s: -----", tireShortName[tireIdx], tirePos[tirePosIdx]);
+            sprintf(outStr, "%s %s: -----",  cars[selectedCar].tireShortName[tireIdx],  cars[selectedCar].tireShortName[tirePosIdx]);
           }
-          oledDisplay.text(xText, yText, outStr);
-          yText +=  oledDisplay.getStringHeight(outStr);
+          oledDisplay.text(textPosition[0], textPosition[1], outStr);
+          textPosition[1] +=  oledDisplay.getStringHeight(outStr);
         }
         oledDisplay.display();
       }
@@ -361,29 +527,163 @@ void MeasureTimeTemp()
     tireIdx++;
   }
   // done, copy local to global
-  for(int idxTire = 0; idxTire < TIRE_COUNT; idxTire++)
+  sprintf(outStr, "%d\t%s", millis(), cars[selectedCar].carName);
+  String fileLine = outStr;
+  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
   {
-    for(int idxMeas = 0; idxMeas < MEASURE_COUNT; idxMeas++)
+    for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
     {
-      tireTemps[idxTire][idxMeas] = localTemps[idxTire][idxMeas];
+      tireTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition] = localTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition];
+      fileLine += "\t";
+      fileLine += tireTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition];
+    }
+  }
+  #ifdef DEBUG_VERBOSE
+  Serial.println(fileLine);
+  #endif
+  AppendFile(SD, "/py_temps.txt", fileLine.c_str());
+}
+//
+///
+///
+void DisplayTireTemps()
+{
+  unsigned long curTime = millis();
+  unsigned long priorTime = millis();
+  int textPosition[2] = {0, 0};
+  char outStr[255];
+  while(true)
+  {
+    for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+    {
+      textPosition[1] = 0;
+      oledDisplay.setFont(demoFonts[iFont]);  
+      oledDisplay.erase();
+      sprintf(outStr, "%s %s", cars[selectedCar].carName, cars[selectedCar].tireShortName[idxTire]);
+      oledDisplay.text(textPosition[0], textPosition[1], outStr);
+      textPosition[1] +=  oledDisplay.getStringHeight(outStr);
+
+      for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
+      {
+        sprintf(outStr, "%s: %3.1F", cars[selectedCar].positionLongName[tirePosIdx], tireTemps[cars[selectedCar].tireCount * idxTire + tirePosIdx]);
+        oledDisplay.text(textPosition[0], textPosition[1], outStr);
+        textPosition[1] +=  oledDisplay.getStringHeight(outStr);
+      }
+      oledDisplay.display();
+      curTime = millis();
+      priorTime = curTime;
+      while(curTime - priorTime < 5000)
+      {
+        curTime = millis();
+        for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+        {
+          buttonReleased[btnIdx] = false;
+          buttonArray[btnIdx].process(curTime);
+        }
+        // select button released, go to next tire
+        if (buttonReleased[0])
+        {
+          buttonReleased[0] = false;
+          buttonReleased[1] = false;
+          break;
+        }
+        // cancel button released, return
+        if (buttonReleased[1])
+        {
+          buttonReleased[0] = false;
+          buttonReleased[1] = false;
+          return;
+        }
+      }
     }
   }
 }
-void DisplayTireTemps()
+//
+//
+//
+int MenuSelect(String menuList[], int menuCount, int linesToDisplay, int initialSelect, int maxWidth)
 {
-  for(int idxTire = 0; idxTire < TIRE_COUNT; idxTire++)
+  char outStr[256];
+  int textPosition[2] = {0, 0};
+  unsigned long curTime = millis();
+  int selection = initialSelect;
+  String selIndicator = " ";
+  iFont = 1;
+  int displayWindow[2] = {0, linesToDisplay - 1 };
+  for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
   {
-    Serial.print(tireShortName[idxTire]);
-    Serial.print(":");
-    for(int idxMeas = 0; idxMeas < MEASURE_COUNT; idxMeas++)
-    {
-      Serial.print("\t");
-      Serial.print(tirePos[idxMeas]);
-      Serial.print(" ");
-      Serial.print(tireTemps[idxTire][idxMeas]);
-    }
-    Serial.println();
+    buttonReleased[btnIdx] = false;
   }
+  while(true)
+  {
+    textPosition[0] = 0;
+    textPosition[1] = 0;
+    oledDisplay.setFont(demoFonts[iFont]);  
+    oledDisplay.erase();
+    oledDisplay.text(textPosition[0], textPosition[1], "Select:");
+    for(int menuIdx = displayWindow[0]; menuIdx <= displayWindow[1]; menuIdx++)
+    {
+      if(menuIdx == selection)
+      {
+        selIndicator = ">";
+      }
+      else
+      {
+        selIndicator = "-";
+      }
+      sprintf(outStr, "%s%s", selIndicator, menuList[menuIdx].substring(0, maxWidth - 1));
+      textPosition[1] += oledDisplay.getStringHeight("X");
+      oledDisplay.text(textPosition[0], textPosition[1], outStr);
+    }
+    oledDisplay.display();
+    while(true)
+    {
+      curTime = millis();
+      for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+      {
+        buttonArray[btnIdx].process(curTime);
+      }
+      // selection made, set state and break
+      if(buttonReleased[0])
+      {
+        buttonReleased[0] = false;
+        return selection;
+      }
+      // change selection, break
+      if(buttonReleased[1])
+      {
+        buttonReleased[1] = false;
+        selection = (selection + 1) < menuCount ? (selection + 1) : 0;
+        // handle loop back to start
+        if (selection < displayWindow[0])
+        {
+          displayWindow[0] = selection;
+          displayWindow[1] = displayWindow[0] + linesToDisplay - 1; 
+        }
+        // show next line at bottom
+        else 
+        if (selection > displayWindow[1])
+        {
+          displayWindow[1] = selection; 
+          displayWindow[0] = displayWindow[1] - linesToDisplay + 1;
+        }
+        break;
+      }
+      delay(100);
+    }
+  }
+  return selection;
+}
+//
+//
+//
+void SelectCar()
+{
+  for(int idx = 0; idx < carCount; idx++)
+  {
+    curMenu[idx] = cars[idx].carName;
+  }
+  selectedCar =  MenuSelect(curMenu, carCount, 3, 0, 15); 
 }
 //
 //
@@ -420,21 +720,299 @@ void ResetTempStable()
   }
   tempStable = false;
 }
+//
+//
+//
+void ReadSetupFile(fs::FS &fs, const char * path)
+{
+  #ifdef DEBUG_VERBOSE
+  Serial.printf("Reading file: %s\n", path);
+  #endif
+  File file = fs.open(path);
+  if(!file)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Failed to open file for reading");
+    #endif
+    return;
+  }
+  char buf[512];
+
+  ReadLine(file, buf);
+  carCount = atoi(buf);
+  cars = new CarSettings[carCount];
+  int maxTires = 0;
+  int maxPositions = 0;
+  for(int carIdx = 0; carIdx < carCount; carIdx++)
+  {
+    // read name
+    ReadLine(file, buf);
+    cars[carIdx].carName = buf;
+    // read tire count and create arrays
+    ReadLine(file, buf);
+    cars[carIdx].tireCount = atoi(buf);
+    maxTires = maxTires > cars[carIdx].tireCount ? maxTires : cars[carIdx].tireCount;
+    cars[carIdx].tireShortName = new String[cars[carIdx].tireCount];
+    cars[carIdx].tireLongName = new String[cars[carIdx].tireCount];
+    // read tire short and long names
+    for(int tireIdx = 0; tireIdx < cars[carIdx].tireCount; tireIdx++)
+    {
+      ReadLine(file, buf);
+      cars[carIdx].tireShortName[tireIdx] = buf;
+      ReadLine(file, buf);
+      cars[carIdx].tireLongName[tireIdx] = buf;
+    }
+    // read measurement count and create arrays
+    ReadLine(file, buf);
+    cars[carIdx].positionCount = atoi(buf);
+    cars[carIdx].positionShortName = new String[cars[carIdx].positionCount];
+    cars[carIdx].positionLongName = new String[cars[carIdx].positionCount];
+    maxPositions = maxPositions > cars[carIdx].positionCount ? maxPositions : cars[carIdx].positionCount;
+    // read tire short and long names
+    for(int positionIdx = 0; positionIdx < cars[carIdx].positionCount; positionIdx++)
+    {
+      ReadLine(file, buf);
+      cars[carIdx].positionShortName[positionIdx] = buf;
+      ReadLine(file, buf);
+      cars[carIdx].positionLongName[positionIdx] = buf;
+    }
+    // seperator
+    ReadLine(file, buf);
+  }
+  selectedCar = 0;
+  file.close();
+  #ifdef DEBUG_VERBOSE
+  Serial.println();
+  Serial.println("Cars Structure:");
+  Serial.println("===============");
+  Serial.print("Defined cars ");
+  Serial.println(carCount);
+  Serial.println("===============");
+  for(int carIdx = 0; carIdx < carCount; carIdx++)
+  {
+    Serial.print("Car: ");
+    Serial.println(cars[carIdx].carName);
+    Serial.print("Tires (");
+    Serial.print(cars[carIdx].tireCount);
+    Serial.println(")");
+    for(int idx = 0; idx < cars[carIdx].tireCount; idx++)
+    {
+      Serial.print(cars[carIdx].tireShortName[idx]);
+      Serial.print(" ");
+      Serial.println(cars[carIdx].tireLongName[idx]);
+    }
+
+    Serial.print("Measurements (");
+    Serial.print(cars[carIdx].positionCount);
+    Serial.println(")");
+    for(int idx = 0; idx <  cars[carIdx].positionCount; idx++)
+    {
+      Serial.print(cars[carIdx].positionShortName[idx]);
+      Serial.print(" ");
+      Serial.println(cars[carIdx].positionLongName[idx]);
+    }
+    Serial.println("=====");
+  }
+  #endif
+  tireTemps = (float*)calloc((maxTires * maxPositions), sizeof(float));
+}
+//
+//
+//
+void WriteSetupFile(fs::FS &fs, const char * path)
+{
+  #ifdef DEBUG_VERBOSE
+  Serial.printf("Writing setup file: %s\n", path);
+  #endif
+  File file = fs.open(path, FILE_WRITE);
+  if(!file)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Failed to open file for writing");
+    #endif
+    return;
+  }
+  file.println("5");            // number of cars
+  file.println("Brian Z4");    // car
+  file.println("4");           // wheels
+  file.println("RF");
+  file.println("Right Front");
+  file.println("LF");
+  file.println("Left Front");
+  file.println("LR");
+  file.println("Left Rear");
+  file.println("RR");
+  file.println("Right Rear");
+  file.println("3");           // Measurements
+  file.println("O");
+  file.println("Outer");
+  file.println("M");
+  file.println("Middle");
+  file.println("I");
+  file.println("Inner");
+  file.println("=========="); 
+  file.println("Mark MR2");    // car
+  file.println("4");           // wheels
+  file.println("RF");
+  file.println("Right Front");
+  file.println("LF");
+  file.println("Left Front");
+  file.println("LR");
+  file.println("Left Rear");
+  file.println("RR");
+  file.println("Right Rear");
+  file.println("3");           // Measurements
+  file.println("O");
+  file.println("Outer");
+  file.println("M");
+  file.println("Middle");
+  file.println("I");
+  file.println("Inner");
+  file.println("=========="); 
+  file.println("Jody P34");    // car
+  file.println("6");           // wheels
+  file.println("RF");
+  file.println("Right Front");
+  file.println("RM");
+  file.println("Right Mid");
+  file.println("LF");
+  file.println("Left Front");
+  file.println("LM");
+  file.println("Left Mid");
+  file.println("LR");
+  file.println("Left Rear");
+  file.println("RR");
+  file.println("Right Rear");
+  file.println("3");           // Measurements
+  file.println("O");
+  file.println("Outer");
+  file.println("M");
+  file.println("Middle");
+  file.println("I");
+  file.println("Inner");
+  file.println("=========="); 
+  file.println("Doc YRZ-M1");    // car
+  file.println("2");           // wheels
+  file.println("F");
+  file.println("Front");
+  file.println("R");
+  file.println("Rear");
+  file.println("3");           // Measurements
+  file.println("O");
+  file.println("Outer");
+  file.println("M");
+  file.println("Middle");
+  file.println("I");
+  file.println("Inner");
+  file.println("=========="); 
+  file.println("Nigel Super3");    // car
+  file.println("3");           // wheels
+  file.println("RF");
+  file.println("Right Front");
+  file.println("LF");
+  file.println("Left Front");
+  file.println("R");
+  file.println("Rear");
+  file.println("3");           // Measurements
+  file.println("O");
+  file.println("Outer");
+  file.println("M");
+  file.println("Middle");
+  file.println("I");
+  file.println("Inner");
+  file.println("=========="); 
+
+  file.close();
+  #ifdef DEBUG_VERBOSE
+  Serial.println("File written");
+  #endif
+}
+//
+//
+//
+void ReadResults(fs::FS &fs, const char * path)
+{
+  char readText[256];
+  File file = fs.open(path);
+  while(true)
+  {
+     ReadLine(file, readText);
+     if(strlen(readText) == 0)
+     {
+       break;
+     }
+     Serial.println(readText);
+  }
+}
+//
+//
+//
+void ReadLine(File file, char* buf)
+{  
+  char c;
+  int bufIdx = 0;
+  buf[0] = '\0';
+  do
+  {
+    if(!file.available())
+    {
+      return;
+    }
+    c = file.read();
+    if(c < 0x20)
+    {
+      if(c != 0x0A)
+      {
+        continue;
+      }
+      break;
+    }
+    buf[bufIdx] = c;
+    bufIdx++;
+    buf[bufIdx] = '\0';
+  } while (c != 0x10);
+  return;
+}
+//
+//
+//
+void AppendFile(fs::FS &fs, const char * path, const char * message)
+{
+  #ifdef DEBUG_VERBOSE
+  Serial.printf("Appending to file: %s\n", path);
+  #endif
+  File file = fs.open(path, FILE_APPEND);
+  if(!file)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Failed to open file for appending");
+    #endif
+    return;
+  }
+  if(file.println(message))
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Message appended");
+    #endif
+  }
+  else 
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Append failed");
+    #endif
+  }
+  file.close();
+}
 
 //
 // handle pressed state
 //
 void button_pressedCallback(uint8_t pinIn)
 {
-  //Serial.print("button_pressedCallback ");
-  //Serial.println(pinIn);
-
   for(int buttonIdx = 0; buttonIdx < BUTTON_COUNT; buttonIdx++)
   {
     if(buttonPin[buttonIdx] == pinIn)
     {
-      //Serial.print("button pressed ");
-      //Serial.println(buttonIdx);
       buttonReleased[buttonIdx] = false;
       break;
     }
@@ -445,15 +1023,19 @@ void button_pressedCallback(uint8_t pinIn)
 //
 void button_releasedCallback(uint8_t pinIn)
 {
-  //Serial.print("button_releasedCallback ");
-  //Serial.println(pinIn);
+  #ifdef DEBUG_VERBOSE
+  Serial.println("button_releasedCallback");
+  #endif
 
   for(int buttonIdx = 0; buttonIdx < BUTTON_COUNT; buttonIdx++)
   {
     if(buttonPin[buttonIdx] == pinIn)
     {
-      //Serial.print("button released ");
-      //Serial.println(buttonIdx);
+      #ifdef DEBUG_VERBOSE
+      Serial.print("Button ");
+      Serial.print(buttonIdx);
+      Serial.println(" released");
+      #endif
       buttonReleased[buttonIdx] = true;
       break;
     }
@@ -464,41 +1046,10 @@ void button_releasedCallback(uint8_t pinIn)
 //
 void button_pressedDurationCallback(uint8_t pinIn, unsigned long duration)
 { 
-  //Serial.print("button_pressedDurationCallback pin ");
-  //Serial.print(pinIn);
-  //Serial.print(" for ");
-  //Serial.println(duration);
-
-  for(int buttonIdx = 0; buttonIdx < BUTTON_COUNT; buttonIdx++)
-  {
-//    if(buttonPin[buttonIdx] == pinIn)
-//    {
-//      Serial.print("button ");
-//      Serial.print(buttonIdx);
-//      Serial.print(" pressed for ");
-//      Serial.println(duration);
-//      break;
-//    }
-  }
 }
 //
 // handle released duration
 //
 void button_releasedDurationCallback(uint8_t pinIn, unsigned long duration)
 {
-  //Serial.print("button_releasedDurationCallback pin ");
-  //Serial.print(pinIn);
-  //Serial.print(" for ");
-  //Serial.println(duration);
-  //for(int buttonIdx = 0; buttonIdx < BUTTON_COUNT; buttonIdx++)
-  //{
-  //  if(buttonPin[buttonIdx] == pinIn)
-  //  {
-  //    Serial.print("button ");
-  //    Serial.print(buttonIdx);
-  //    Serial.print(" released for ");
-  //    Serial.println(duration);
-  //    break;
-  //  }
-  //}
 }
