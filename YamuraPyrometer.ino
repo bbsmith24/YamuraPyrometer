@@ -5,6 +5,24 @@
   Date: July 2023
   License: This code is public domain but you buy me a beer if you use this and we meet someday (Beerware License).
 
+  Hardware
+  3 buttons - menu select/record temp/next tire temp review
+              menu down/exit tire temp review
+              menu up
+  On/Off switch (battery, always on when charging on USB)
+  LED/resistor for stable temp indicator
+  Sparkfun ESP32 Thing Plus
+  Sparkfun K type thermocouple amplifier
+  Sparkfun RTC (to be added)
+  GeeekPi OLED Display Module I2C 128X64 Pixel 0.96 Inch Display Module
+  1200mAh LiON battery
+  microSD card (8GB is fine, not huge amount of data being stored)
+  misc headers
+  3D printed box
+
+  records to microSD card
+  setup file on microSD card
+  wifi interface for display, up/down load (to add)
 */
 
 #include <SparkFun_MCP9600.h>
@@ -57,6 +75,7 @@ struct CarSettings
 CarSettings* cars;
 // dynamic tire temp array
 float* tireTemps;
+float* currentTemps;
 
 String curMenu[50];
 
@@ -86,11 +105,7 @@ int carCount = 0;
 int selectedCar = 0;
 int tireIdx = 0;
 int measIdx = 0;
-//float tireTemps[TIRE_COUNT][MEASURE_COUNT] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
 float tempRes = 1.0;
-//String tireShortName[TIRE_COUNT] = {"RF", "LF", "RR", "LR"};
-//String tireLongName[TIRE_COUNT] = {"Right Front", "Left Front", "Left Rear", "Right Rear"};
-//String tirePos[MEASURE_COUNT] = {"O", "M", "I"};
 int deviceState = 0;
 //
 //
@@ -388,7 +403,7 @@ void loop()
       break;
     case MEASURE_TIRES:
       MeasureTireTemps();
-      deviceState = DISPLAY_RESULTS;
+      deviceState = DISPLAY_TIRES;
       break;
     case DISPLAY_TIRES:
       DisplayTireTemps();
@@ -423,17 +438,16 @@ void MeasureTireTemps()
   int textPosition[2] = {0, 0};
 
   // local measurement array, allow preserve measurements on cancel
-  float localTemps[48];
   for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
   {
     for(int idxMeas = 0; idxMeas < cars[selectedCar].positionCount; idxMeas++)
     {
-      localTemps[idxTire * cars[selectedCar].tireCount + idxMeas] = 0.0;
+      currentTemps[(idxTire * cars[selectedCar].tireCount) + idxMeas] = 0.0;
     }
   }
   // measure defined tires
   #ifdef DEBUG_VERBOSE
-  sprintf(outStr, "Selected car %s tire count %d positions %d\n", cars[selectedCar].carName, cars[selectedCar].tireCount, cars[selectedCar].positionCount);
+  sprintf(outStr, "Selected car %s (%d) tire count %d positions %d\n", cars[selectedCar].carName.c_str(), selectedCar, cars[selectedCar].tireCount, cars[selectedCar].positionCount);
   Serial.print(outStr);
   #endif
   while(tireIdx < cars[selectedCar].tireCount)
@@ -444,7 +458,7 @@ void MeasureTireTemps()
     measIdx = 0;  // measure location - O, M, I
     for(int idx = 0; idx < cars[selectedCar].positionCount; idx++)
     {
-      localTemps[tireIdx * cars[selectedCar].tireCount + idx] = 0.0;
+      currentTemps[(tireIdx * cars[selectedCar].tireCount) + idx] = 0.0;
     }
     ResetTempStable();
     digitalWrite(TEMPSTABLE_LED, LOW);
@@ -482,7 +496,7 @@ void MeasureTireTemps()
             measIdx = 0;
             break;
           }
-          localTemps[tireIdx * cars[selectedCar].tireCount + measIdx] = 0;
+          currentTemps[(tireIdx * cars[selectedCar].tireCount) + measIdx] = 0;
           ResetTempStable();
           digitalWrite(TEMPSTABLE_LED, LOW);
         }
@@ -498,8 +512,8 @@ void MeasureTireTemps()
         priorTime = curTime;
         curTime = millis();
         // read temp, check for stable temp, light LED if stable
-        localTemps[tireIdx * cars[selectedCar].tireCount + measIdx] = tempSensor.getThermocoupleTemp(false); // false for F, true or empty for C
-        tempStable = CheckTempStable(localTemps[tireIdx * cars[selectedCar].tireCount + measIdx]);
+        currentTemps[(tireIdx * cars[selectedCar].tireCount) + measIdx] = tempSensor.getThermocoupleTemp(false); // false for F, true or empty for C
+        tempStable = CheckTempStable(currentTemps[(tireIdx * cars[selectedCar].tireCount) + measIdx]);
         // text string location
         textPosition[0] = 0;
         textPosition[1] = 0;
@@ -510,9 +524,9 @@ void MeasureTireTemps()
 
         for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
         {
-          if(localTemps[tireIdx * cars[selectedCar].tireCount + tirePosIdx] > 0.0)
+          if(currentTemps[(tireIdx * cars[selectedCar].tireCount) + tirePosIdx] > 0.0)
           {
-            sprintf(outStr, "%s %s: %3.1F", cars[selectedCar].tireShortName[tireIdx], cars[selectedCar].positionShortName[tirePosIdx], localTemps[cars[selectedCar].tireCount * tireIdx + tirePosIdx]);
+            sprintf(outStr, "%s %s: %3.1F", cars[selectedCar].tireShortName[tireIdx], cars[selectedCar].positionShortName[tirePosIdx], currentTemps[(cars[selectedCar].tireCount * tireIdx) + tirePosIdx]);
           } 
           else
           {
@@ -527,13 +541,13 @@ void MeasureTireTemps()
     tireIdx++;
   }
   // done, copy local to global
-  sprintf(outStr, "%d\t%s", millis(), cars[selectedCar].carName);
+  sprintf(outStr, "%d\t%s", millis(), cars[selectedCar].carName.c_str());
   String fileLine = outStr;
   for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
   {
     for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
     {
-      tireTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition] = localTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition];
+      tireTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition] = currentTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition];
       fileLine += "\t";
       fileLine += tireTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition];
     }
@@ -559,13 +573,14 @@ void DisplayTireTemps()
       textPosition[1] = 0;
       oledDisplay.setFont(demoFonts[iFont]);  
       oledDisplay.erase();
-      sprintf(outStr, "%s %s", cars[selectedCar].carName, cars[selectedCar].tireShortName[idxTire]);
+	  // trim this to the max width of the display?
+      sprintf(outStr, "%s %s", cars[selectedCar].tireShortName[idxTire], cars[selectedCar].carName.c_str());
       oledDisplay.text(textPosition[0], textPosition[1], outStr);
       textPosition[1] +=  oledDisplay.getStringHeight(outStr);
 
       for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
       {
-        sprintf(outStr, "%s: %3.1F", cars[selectedCar].positionLongName[tirePosIdx], tireTemps[cars[selectedCar].tireCount * idxTire + tirePosIdx]);
+        sprintf(outStr, "%s: %3.1F", cars[selectedCar].positionLongName[tirePosIdx], tireTemps[(cars[selectedCar].tireCount * idxTire) + tirePosIdx]);
         oledDisplay.text(textPosition[0], textPosition[1], outStr);
         textPosition[1] +=  oledDisplay.getStringHeight(outStr);
       }
@@ -650,10 +665,29 @@ int MenuSelect(String menuList[], int menuCount, int linesToDisplay, int initial
         return selection;
       }
       // change selection, break
-      if(buttonReleased[1])
+      else if(buttonReleased[1])
       {
         buttonReleased[1] = false;
         selection = (selection + 1) < menuCount ? (selection + 1) : 0;
+        // handle loop back to start
+        if (selection < displayWindow[0])
+        {
+          displayWindow[0] = selection;
+          displayWindow[1] = displayWindow[0] + linesToDisplay - 1; 
+        }
+        // show next line at bottom
+        else 
+        if (selection > displayWindow[1])
+        {
+          displayWindow[1] = selection; 
+          displayWindow[0] = displayWindow[1] - linesToDisplay + 1;
+        }
+        break;
+      }
+      else if(buttonReleased[2])
+      {
+        buttonReleased[2] = false;
+        selection = (selection - 1) >= 0 ? (selection - 1) : menuCount - 1;
         // handle loop back to start
         if (selection < displayWindow[0])
         {
@@ -684,6 +718,10 @@ void SelectCar()
     curMenu[idx] = cars[idx].carName;
   }
   selectedCar =  MenuSelect(curMenu, carCount, 3, 0, 15); 
+  Serial.print("Selected car from SelectCar() ") ;
+  Serial.print(selectedCar) ;
+  Serial.print(" ") ;
+  Serial.println(cars[selectedCar].carName.c_str());
 }
 //
 //
@@ -791,7 +829,7 @@ void ReadSetupFile(fs::FS &fs, const char * path)
   for(int carIdx = 0; carIdx < carCount; carIdx++)
   {
     Serial.print("Car: ");
-    Serial.println(cars[carIdx].carName);
+    Serial.println(cars[carIdx].carName.c_str());
     Serial.print("Tires (");
     Serial.print(cars[carIdx].tireCount);
     Serial.println(")");
@@ -814,7 +852,9 @@ void ReadSetupFile(fs::FS &fs, const char * path)
     Serial.println("=====");
   }
   #endif
+  // allocate final and working tire temps
   tireTemps = (float*)calloc((maxTires * maxPositions), sizeof(float));
+  currentTemps = (float*)calloc((maxTires * maxPositions), sizeof(float));
 }
 //
 //
