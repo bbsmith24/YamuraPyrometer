@@ -31,6 +31,7 @@
 #include "FS.h"
 #include "SD.h"
 #include "SPI.h"
+#include <SparkFun_RV1805.h>
 
 // OLED Fonts
 #include <res/qw_fnt_5x7.h>
@@ -41,6 +42,8 @@
 
 // uncomment for debug to serial monitor
 //#define DEBUG_VERBOSE
+// uncomment for RTC module attached
+#define HAS_RTC
 
 #define TEMPSTABLE_LED 4
 #define BUTTON_1 12
@@ -55,6 +58,7 @@
 #define MEASURE_TIRES 2
 #define DISPLAY_TIRES 3
 #define DISPLAY_RESULTS 4
+#define SET_DATETIME 5
 
 static InputDebounce buttonArray[BUTTON_COUNT];
 int buttonPin[BUTTON_COUNT] = {BUTTON_1, BUTTON_2, BUTTON_3, BUTTON_4};
@@ -80,10 +84,12 @@ float* currentTemps;
 String curMenu[50];
 
 // devices
+// thermocouple amplifier
 MCP9600 tempSensor;
-//QwiicMicroOLED oledDisplay;
+// rtc
+RV1805 rtc;
+// OLED display
 QwiicTransparentOLED oledDisplay;
-
 // An array of available fonts
 QwiicFont *demoFonts[] = {
     &QW_FONT_5X7,
@@ -107,6 +113,8 @@ int tireIdx = 0;
 int measIdx = 0;
 float tempRes = 1.0;
 int deviceState = 0;
+
+String curTimeStr;
 //
 //
 //
@@ -140,7 +148,7 @@ void setup()
   while (!oledDisplay.begin(Wire, 0x3C))
   {
     #ifdef DEBUG_VERBOSE
-    Serial.println("Device begin failed. Freezing...");
+    Serial.println("OLED begin failed. Freezing...");
     #endif
     digitalWrite(TEMPSTABLE_LED, HIGH);
     delay(200);
@@ -168,13 +176,13 @@ void setup()
   if(tempSensor.isConnected())
   {
     #ifdef DEBUG_VERBOSE
-    Serial.println("Device acknowledged!");
+    Serial.println("Thermocouple Device acknowledged!");
     #endif
   }
   else 
   {
     #ifdef DEBUG_VERBOSE
-    Serial.println("Device did not acknowledge! Freezing.");
+    Serial.println("Thermocouple did not acknowledge! Freezing.");
     #endif
     while(1); //hang forever
   }
@@ -183,13 +191,13 @@ void setup()
   if(tempSensor.checkDeviceID())
   {
     #ifdef DEBUG_VERBOSE
-    Serial.println("Device ID is correct!");        
+    Serial.println("Thermocouple ID is correct!");        
     #endif
   }
   else 
   {
     #ifdef DEBUG_VERBOSE
-    Serial.println("Device ID is not correct! Freezing.");
+    Serial.println("Thermocouple ID is not correct! Freezing.");
     #endif
     while(1);
   }
@@ -319,6 +327,26 @@ void setup()
       #endif
       break;
   }
+  #ifdef HAS_RTC
+    if (rtc.begin() == false) 
+    {
+      #ifdef DEBUG_VERBOSE
+      Serial.println("RTC not initialized, check wiring");
+      #endif
+    }
+    //Use the time from the Arduino compiler (build time) to set the RTC
+    //Keep in mind that Arduino does not get the new compiler time every time it compiles. to ensure the proper time is loaded, open up a fresh version of the IDE and load the sketch.
+    if (rtc.setToCompilerTime() == false) 
+    {
+      #ifdef DEBUG_VERBOSE
+      Serial.println("RTC failed to set time");
+      #endif
+    }
+    #ifdef DEBUG_VERBOSE
+    Serial.println("RTC online!");
+    #endif
+  #endif
+
   Serial.println();
 
   if(!SD.begin(5))
@@ -380,9 +408,24 @@ void setup()
   Serial.println();
   Serial.println("Ready!");
   #endif
-  oledDisplay.erase();
-  oledDisplay.text(0, 0, "Ready!");
-  oledDisplay.display();
+  #ifdef HAS_RTC
+    //Updates the time variables from RTC
+    if (rtc.updateTime() == false) 
+    {
+      #ifdef DEBUG_VERBOSE
+      Serial.print("RTC failed to update");
+      #endif
+    }
+    curTimeStr = rtc.stringTime();
+    curTimeStr += " ";
+    curTimeStr += rtc.stringDateUSA();
+    Serial.println(curTimeStr);
+    oledDisplay.erase();
+    oledDisplay.text(0, 0, "Ready!");
+    oledDisplay.text(0, oledDisplay.getStringHeight("X"), curTimeStr);
+    oledDisplay.display();
+  #endif
+
   delay(1000);
   prior = millis();
   deviceState = DISPLAY_MENU;
@@ -413,6 +456,10 @@ void loop()
       ReadResults(SD, "/py_temps.txt");
       deviceState = DISPLAY_MENU;
       break;
+    case SET_DATETIME:
+      SetDateTime();
+      deviceState = DISPLAY_MENU;
+      break;
     default:
       break;
   }
@@ -422,11 +469,16 @@ void loop()
 //
 void DisplayMenu()
 {
+  int menuCount = 4;
   curMenu[0] = "Car/Driver";
   curMenu[1] = "Measure Temps";
   curMenu[2] = "Display Temps";
   curMenu[3] = "Display Results";
-  deviceState =  MenuSelect(curMenu, 4, 3, 0, 15) + 1; 
+  #ifdef HAS_RTC
+    menuCount = 5;
+    curMenu[4] = "Set Date/Time";
+  #endif
+  deviceState =  MenuSelect(curMenu, menuCount, 3, 0, 15) + 1; 
 }
 //
 // 
@@ -541,7 +593,18 @@ void MeasureTireTemps()
     tireIdx++;
   }
   // done, copy local to global
-  sprintf(outStr, "%d\t%s", millis(), cars[selectedCar].carName.c_str());
+  #ifdef HAS_RTC
+    if (rtc.updateTime() == false) 
+    {
+      Serial.print("RTC failed to update");
+    }
+    curTimeStr = rtc.stringTime();
+    curTimeStr += " ";
+    curTimeStr += rtc.stringDateUSA();
+    sprintf(outStr, "%s\t%s", curTimeStr.c_str(), cars[selectedCar].carName.c_str());
+  #else
+    sprintf(outStr, "%d\t%s", millis(), cars[selectedCar].carName.c_str());
+  #endif
   String fileLine = outStr;
   for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
   {
@@ -707,6 +770,224 @@ int MenuSelect(String menuList[], int menuCount, int linesToDisplay, int initial
     }
   }
   return selection;
+}
+//
+//
+//
+void SetDateTime()
+{
+  char outStr[256];
+  int timeVals[6] = {0, 0, 0, 0, 0, 0};  // date, month, year, day, hour, min
+  bool isPM = false;
+  int textPosition[2] = {0, 0};
+  int setIdx = 0;
+  unsigned long curTime = millis();
+  int delta = 0;
+  if (rtc.updateTime() == false) 
+  {
+    Serial.print("RTC failed to update");
+  }
+  timeVals[0] = rtc.getDate();
+  timeVals[1] = rtc.getMonth();
+  timeVals[2] = rtc.getYear();
+  timeVals[3] = rtc.getWeekday();
+  timeVals[4] = rtc.getHours();
+  timeVals[5] = rtc.getMinutes();
+  isPM = rtc.isPM();
+  iFont = 1;
+
+  for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+  {
+    buttonReleased[btnIdx] = false;
+  }
+  while(true)
+  {
+    textPosition[0] = 0;
+    textPosition[1] = 0;
+    oledDisplay.erase();
+    oledDisplay.setFont(demoFonts[iFont]);  
+    oledDisplay.text(textPosition[0], textPosition[1], "Set date/time");
+    
+    textPosition[1] += oledDisplay.getStringHeight("X");
+
+    sprintf(outStr, "%02d/%02d/%02d ", timeVals[0], timeVals[1], timeVals[2]);
+    switch(timeVals[3])
+    {
+      case 0:
+        strcat(outStr, "Su");
+        break;
+      case 1:
+        strcat(outStr, "M");
+        break;
+      case 2:
+        strcat(outStr, "Tu");
+        break;
+      case 3:
+        strcat(outStr, "W");
+        break;
+      case 4:
+        strcat(outStr, "Th");
+        break;
+      case 5:
+        strcat(outStr, "F");
+        break;
+      case 6:
+        strcat(outStr, "Sa");
+        break;
+      default:
+        strcat(outStr, "--");
+        break;
+    }
+    oledDisplay.text(textPosition[0], textPosition[1], outStr);
+    if(setIdx < 4)
+    {
+      textPosition[1] += oledDisplay.getStringHeight(outStr);;
+      sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "--" : "  "), (setIdx == 1 ? "--" : "  "), (setIdx == 2 ? "--" : "  "), (setIdx == 3 ? "--" : "  "));
+      oledDisplay.text(textPosition[0], textPosition[1], outStr);
+    }
+    textPosition[1] += oledDisplay.getStringHeight(outStr);;
+    sprintf(outStr, "%02d:%02d %s", timeVals[4], timeVals[5], (isPM ? "PM" : "AM"));
+    oledDisplay.text(textPosition[0], textPosition[1], outStr);
+    if(setIdx > 3)
+    {
+      textPosition[1] += oledDisplay.getStringHeight(outStr);;
+      sprintf(outStr, "%s %s %s", (setIdx == 4 ? "--" : "  "), (setIdx == 5 ? "--" : "  "), (setIdx == 6 ? "--" : "  "));
+      oledDisplay.text(textPosition[0], textPosition[1], outStr);
+    }
+    
+    oledDisplay.display();
+    while(!buttonReleased[0])
+    {
+      curTime = millis();
+      for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+      {
+        buttonReleased[btnIdx] = false;
+        buttonArray[btnIdx].process(curTime);
+      }
+      // save time element, advance
+      if(buttonReleased[0])
+      {
+        buttonReleased[0] = false;
+        setIdx++;
+        if(setIdx > 6)
+        {
+          break;
+        }
+      }
+      // increase/decrease
+      else if(buttonReleased[1])
+      {
+        buttonReleased[1] = false;
+        delta = 1;
+      }
+      else if(buttonReleased[2])
+      {
+        buttonReleased[2] = false;
+        delta = -1;
+      }
+      else
+      {
+        delta = 0;
+        continue;
+      }
+      switch (setIdx)
+      {
+        case 0:  // date
+          timeVals[0] += delta;
+          if(timeVals[0] <= 0)
+          {
+            timeVals[0] = 31;
+          }
+          if(timeVals[0] > 31)
+          {
+            timeVals[0] = 1;
+          }
+          break;
+        case 1:  // month
+          timeVals[1] += delta;
+          if(timeVals[1] <= 0)
+          {
+            timeVals[1] = 12;
+          }
+          if(timeVals[1] > 12)
+          {
+            timeVals[1] = 1;
+          }
+          break;
+        case 2:  // year
+          timeVals[2] += delta;
+          if(timeVals[2] < 0)
+          {
+            timeVals[2] = 99;
+          }
+          if(timeVals[2] > 99)
+          {
+            timeVals[2] = 0;
+          }
+          break;
+        case 3:  // day
+          timeVals[3] += delta;
+          if(timeVals[3] < 0)
+          {
+            timeVals[3] = 6;
+          }
+          if(timeVals[3] > 6)
+          {
+            timeVals[3] = 0;
+          }
+          break;
+        case 4:  // hour
+          timeVals[4] += delta;
+          if(timeVals[4] < 0)
+          {
+            timeVals[4] = 12;
+          }
+          if(timeVals[4] > 12)
+          {
+            timeVals[4] = 1;
+          }
+          break;
+        case 5:  // minute
+          timeVals[5] += delta;
+          if(timeVals[5] < 0)
+          {
+            timeVals[5] = 59;
+          }
+          if(timeVals[5] > 59)
+          {
+            timeVals[5] = 0;
+          }
+          break;
+        case 6:  // am/pm
+          if(delta != 0)
+          {
+            isPM = !isPM;
+          }
+          break;
+      }
+      break;
+    }
+    if(setIdx > 6)
+    {
+      break;
+    }
+  }
+  if(isPM)
+  {
+    rtc.set24Hour();
+    if (timeVals[4] < 12)
+    {
+      timeVals[4] += 12;
+    }
+  }
+  //              hund, sec, min,         hour,        date         month,       year,        day
+  if(!rtc.setTime(0,    0,   timeVals[5], timeVals[4], timeVals[0], timeVals[1], timeVals[2], timeVals[3]))
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Set time failed");
+    #endif
+  }
+  rtc.set12Hour();
 }
 //
 //
@@ -1063,19 +1344,10 @@ void button_pressedCallback(uint8_t pinIn)
 //
 void button_releasedCallback(uint8_t pinIn)
 {
-  #ifdef DEBUG_VERBOSE
-  Serial.println("button_releasedCallback");
-  #endif
-
   for(int buttonIdx = 0; buttonIdx < BUTTON_COUNT; buttonIdx++)
   {
     if(buttonPin[buttonIdx] == pinIn)
     {
-      #ifdef DEBUG_VERBOSE
-      Serial.print("Button ");
-      Serial.print(buttonIdx);
-      Serial.println(" released");
-      #endif
       buttonReleased[buttonIdx] = true;
       break;
     }
