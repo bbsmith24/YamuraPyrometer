@@ -59,6 +59,8 @@
 #define DISPLAY_TIRES 3
 #define DISPLAY_RESULTS 4
 #define SET_DATETIME 5
+#define CHANGE_SETTINGS 6
+#define DELETE_DATAFILE 7
 
 static InputDebounce buttonArray[BUTTON_COUNT];
 int buttonPin[BUTTON_COUNT] = {BUTTON_1, BUTTON_2, BUTTON_3, BUTTON_4};
@@ -82,6 +84,13 @@ float* tireTemps;
 float* currentTemps;
 
 String curMenu[50];
+int menuResult[50];
+struct MenuChoice
+{
+  String description;
+  int result;
+};
+MenuChoice choices[50];
 
 // devices
 // thermocouple amplifier
@@ -106,6 +115,7 @@ int tempIdx = 0;
 float tempStableRecent[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 float tempStableMinMax[2] = {150.0, -150.0};
 bool tempStable = false;
+bool tempUnits = false; // true for C, false for F
 
 int carCount = 0;
 int selectedCar = 0;
@@ -456,10 +466,18 @@ void loop()
       ReadResults(SD, "/py_temps.txt");
       deviceState = DISPLAY_MENU;
       break;
-    case SET_DATETIME:
-      SetDateTime();
+    case CHANGE_SETTINGS:
+      ChangeSettings();
       deviceState = DISPLAY_MENU;
       break;
+    //case SET_DATETIME:
+    //  SetDateTime();
+    //  deviceState = DISPLAY_MENU;
+    //  break;
+    //case DELETE_DATAFILE:
+    //  DeleteDataFile();
+    //  deviceState = DISPLAY_MENU;
+    //  break;
     default:
       break;
   }
@@ -469,16 +487,16 @@ void loop()
 //
 void DisplayMenu()
 {
-  int menuCount = 4;
-  curMenu[0] = "Car/Driver";
-  curMenu[1] = "Measure Temps";
-  curMenu[2] = "Display Temps";
-  curMenu[3] = "Display Results";
-  #ifdef HAS_RTC
-    menuCount = 5;
-    curMenu[4] = "Set Date/Time";
-  #endif
-  deviceState =  MenuSelect(curMenu, menuCount, 3, 0, 15) + 1; 
+  int menuCount = 5;
+  choices[0].description = "Car/Driver";      choices[0].result = SELECT_CAR;
+  choices[1].description = "Measure Temps";   choices[1].result = MEASURE_TIRES;
+  choices[2].description = "Display Temps";   choices[2].result = DISPLAY_TIRES;
+  choices[3].description = "Display Results"; choices[3].result = DISPLAY_RESULTS;
+  choices[4].description = "Settings";        choices[4].result = CHANGE_SETTINGS;
+  //choices[4].description = "Set Date/Time";   choices[4].result = SET_DATETIME;
+  //choices[6].description = "Delete Data";     choices[6].result = DELETE_DATAFILE;
+  
+  deviceState =  MenuSelect(choices, menuCount, 3, SELECT_CAR, 15); 
 }
 //
 // 
@@ -564,7 +582,7 @@ void MeasureTireTemps()
         priorTime = curTime;
         curTime = millis();
         // read temp, check for stable temp, light LED if stable
-        currentTemps[(tireIdx * cars[selectedCar].tireCount) + measIdx] = tempSensor.getThermocoupleTemp(false); // false for F, true or empty for C
+        currentTemps[(tireIdx * cars[selectedCar].tireCount) + measIdx] = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
         tempStable = CheckTempStable(currentTemps[(tireIdx * cars[selectedCar].tireCount) + measIdx]);
         // text string location
         textPosition[0] = 0;
@@ -619,6 +637,7 @@ void MeasureTireTemps()
   Serial.println(fileLine);
   #endif
   AppendFile(SD, "/py_temps.txt", fileLine.c_str());
+  digitalWrite(TEMPSTABLE_LED, LOW);
 }
 //
 ///
@@ -679,15 +698,24 @@ void DisplayTireTemps()
 //
 //
 //
-int MenuSelect(String menuList[], int menuCount, int linesToDisplay, int initialSelect, int maxWidth)
+int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect, int maxWidth)
 {
   char outStr[256];
   int textPosition[2] = {0, 0};
   unsigned long curTime = millis();
   int selection = initialSelect;
+  for(int selIdx = 0; selIdx < menuCount; selIdx++)
+  {
+    if(choices[selIdx].result == initialSelect)
+    {
+      selection = selIdx;
+      break;
+    }
+  }
   String selIndicator = " ";
   iFont = 1;
   int displayWindow[2] = {0, linesToDisplay - 1 };
+  displayWindow[1] = (menuCount < linesToDisplay ? menuCount : linesToDisplay) - 1;
   for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
   {
     buttonReleased[btnIdx] = false;
@@ -709,7 +737,7 @@ int MenuSelect(String menuList[], int menuCount, int linesToDisplay, int initial
       {
         selIndicator = "-";
       }
-      sprintf(outStr, "%s%s", selIndicator, menuList[menuIdx].substring(0, maxWidth - 1));
+      sprintf(outStr, "%s%s", selIndicator, choices[menuIdx].description.substring(0, maxWidth - 1));
       textPosition[1] += oledDisplay.getStringHeight("X");
       oledDisplay.text(textPosition[0], textPosition[1], outStr);
     }
@@ -725,7 +753,7 @@ int MenuSelect(String menuList[], int menuCount, int linesToDisplay, int initial
       if(buttonReleased[0])
       {
         buttonReleased[0] = false;
-        return selection;
+        return choices[selection].result;
       }
       // change selection, break
       else if(buttonReleased[1])
@@ -769,7 +797,68 @@ int MenuSelect(String menuList[], int menuCount, int linesToDisplay, int initial
       delay(100);
     }
   }
-  return selection;
+  return choices[selection].result;
+}
+//
+//
+//
+void SelectCar()
+{
+
+  for(int idx = 0; idx < carCount; idx++)
+  {
+    choices[idx].description = cars[idx].carName;
+    choices[idx].result = idx; 
+  }
+  selectedCar =  MenuSelect(choices, carCount, 3, 0, 15); 
+  #ifdef DEBUG_VERBOSE
+  Serial.print("Selected car from SelectCar() ") ;
+  Serial.print(selectedCar) ;
+  Serial.print(" ") ;
+  Serial.println(cars[selectedCar].carName.c_str());
+  #endif
+}
+//
+//
+//
+void ChangeSettings()
+{
+  int menuCount = 4;
+  int result =  0;
+  while(result != 3)
+  {
+    choices[0].description = "Set Date/Time"; choices[0].result = 0;
+    choices[1].description = "Set Units";     choices[1].result = 1;
+    choices[2].description = "Delete Data";   choices[2].result = 2;
+    choices[3].description = "Exit";          choices[3].result = 3;
+    result =  MenuSelect(choices, menuCount, 3, 0, 15); 
+    switch(result)
+    {
+      case 0:
+        SetDateTime();
+        break;
+      case 1:
+        SetUnits();
+        break;
+      case 2:
+        DeleteDataFile();
+        break;
+      default:
+      break;
+    }
+  }
+}
+//
+//
+//
+void SetUnits()
+{
+  int menuCount = 2;
+  choices[0].description = "Temp in F";   choices[0].result = 0;
+  choices[1].description = "Temp in C";   choices[1].result = 1;
+  int menuResult =  MenuSelect(choices, menuCount, 3, 0, 15); 
+  // true for C, false for F
+  tempUnits = menuResult == 1;
 }
 //
 //
@@ -992,17 +1081,16 @@ void SetDateTime()
 //
 //
 //
-void SelectCar()
+void DeleteDataFile()
 {
-  for(int idx = 0; idx < carCount; idx++)
+  int menuCount = 2;
+  choices[0].description = "Yes";      choices[0].result = 1;
+  choices[1].description = "No";   choices[1].result = 0;
+  int menuResult =  MenuSelect(choices, menuCount, 3, 1, 15); 
+  if(menuResult == 1)
   {
-    curMenu[idx] = cars[idx].carName;
+    DeleteFile(SD, "/py_temps.txt");
   }
-  selectedCar =  MenuSelect(curMenu, carCount, 3, 0, 15); 
-  Serial.print("Selected car from SelectCar() ") ;
-  Serial.print(selectedCar) ;
-  Serial.print(" ") ;
-  Serial.println(cars[selectedCar].carName.c_str());
 }
 //
 //
@@ -1323,6 +1411,27 @@ void AppendFile(fs::FS &fs, const char * path, const char * message)
     #endif
   }
   file.close();
+}
+//
+//
+//
+void DeleteFile(fs::FS &fs, const char * path)
+{
+  #ifdef DEBUG_VERBOSE
+  Serial.printf("Deleting file: %s\n", path);
+  #endif
+  if(fs.remove(path))
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("File deleted");
+    #endif
+  }
+  else 
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Delete failed");
+    #endif
+  }
 }
 
 //
