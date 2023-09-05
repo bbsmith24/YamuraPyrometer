@@ -2,7 +2,7 @@
   YamuraLog Recording Tire Pyrometer
   By: Brian Smith
   Yamura Electronics Division
-  Date: July 2023
+  Date: September 2023
   License: This code is public domain but you buy me a beer if you use this and we meet someday (Beerware License).
 
   Hardware
