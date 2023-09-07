@@ -80,8 +80,8 @@ struct CarSettings
 };
 CarSettings* cars;
 // dynamic tire temp array
-float* tireTemps;
-float* currentTemps;
+float tireTemps[60]; // largest array 12 tires, 5 measurements
+float currentTemps[60];
 
 String curMenu[50];
 int menuResult[50];
@@ -627,15 +627,15 @@ void MeasureTireTemps()
     curTimeStr = rtc.stringTime();
     curTimeStr += " ";
     curTimeStr += rtc.stringDateUSA();
-    sprintf(outStr, "%s\t%s\t%d\t%d\t", curTimeStr.c_str(), 
-                                        cars[selectedCar].carName.c_str(),
-                                        cars[selectedCar].tireCount, 
-                                        cars[selectedCar].positionCount);
+    sprintf(outStr, "%s;%s;%d;%d", curTimeStr.c_str(), 
+                                   cars[selectedCar].carName.c_str(),
+                                   cars[selectedCar].tireCount, 
+                                   cars[selectedCar].positionCount);
   #else
-    sprintf(outStr, "%d\t%s\t%d\t%d\t", millis(), 
-                                        cars[selectedCar].carName.c_str(), 
-                                        cars[selectedCar].tireCount, 
-                                        cars[selectedCar].positionCount);
+    sprintf(outStr, "%d;%s;%d;%d", millis(), 
+                                   cars[selectedCar].carName.c_str(), 
+                                   cars[selectedCar].tireCount, 
+                                   cars[selectedCar].positionCount);
   #endif
   String fileLine = outStr;
   for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
@@ -643,18 +643,24 @@ void MeasureTireTemps()
     for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
     {
       tireTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition] = currentTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition];
-      fileLine += "\t";
+      //outStr = strcat(outStr, "\t");
+      //outStr = strcat(outStr, sprintf("%.2f", tireTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition]));
+      fileLine += ';';//(9);
       fileLine += tireTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition];
     }
   }
   for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
   {
-    fileLine += "\t";
+    //outStr = strcat(outStr, "\t");
+    //outStr = strcat(outStr, cars[selectedCar].tireShortName[idxTire].c_str());
+    fileLine += ';';//(9);
     fileLine += cars[selectedCar].tireShortName[idxTire];
   }
   for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
   {
-    fileLine += "\t";
+    //outStr = strcat(outStr, "\t");
+    //outStr = strcat(outStr, cars[selectedCar].positionShortName[idxPosition].c_str());
+    fileLine += ';';//char(9);
     fileLine += cars[selectedCar].positionShortName[idxPosition];
   }
   #ifdef DEBUG_VERBOSE
@@ -1217,7 +1223,7 @@ void DeleteDataFile()
   int menuCount = 2;
   choices[0].description = "Yes";      choices[0].result = 1;
   choices[1].description = "No";   choices[1].result = 0;
-  int menuResult =  MenuSelect(choices, menuCount, 6, 1, 19); 
+  int menuResult = MenuSelect (choices, menuCount, 6, 1, 19); 
   if(menuResult == 1)
   {
     DeleteFile(SD, "/py_temps.txt");
@@ -1353,8 +1359,8 @@ void ReadSetupFile(fs::FS &fs, const char * path)
   }
   #endif
   // allocate final and working tire temps
-  tireTemps = (float*)calloc((maxTires * maxPositions), sizeof(float));
-  currentTemps = (float*)calloc((maxTires * maxPositions), sizeof(float));
+  //tireTemps = (float*)calloc((maxTires * maxPositions), sizeof(float));
+  //currentTemps = (float*)calloc((maxTires * maxPositions), sizeof(float));
   //
   file.close();
 }
@@ -1476,6 +1482,7 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
 {
   ReadToSerial();
   char buf[512];
+  char* token;
   File file = SD.open("/py_temps.txt");
   if(!file)
   {
@@ -1495,9 +1502,163 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     choices[menuCnt].description = buf;      choices[menuCnt].result = menuCnt;
     menuCnt++;
   }
-  MenuSelect(choices, menuCnt, 6, 0, 19);
+  int menuResult =MenuSelect(choices, menuCnt, 6, 0, 19);
   file.close();
   // at this point, we need to parse the selected line and add to a measurment structure for display
+  // get to the correct line
+  file = SD.open("/py_temps.txt");
+  if(!file)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Failed to open file for reading");
+    #endif
+    return;
+  }
+  for (int lineNumber = 0; lineNumber <= menuResult; lineNumber++)
+  {
+    ReadLine(file, buf);
+  } 
+  file.close();
+  // buf contains the line, now tokenize it
+  // format is:
+  // date/time car tireCnt positionCnt measurements tireShortNames positionShortNames (tsv)
+  // structures to hold data
+  // car info structure
+  // struct CarSettings
+  // {
+  //     String carName;
+  //     int tireCount;
+  //     String* tireShortName;
+  //     String* tireLongName;
+  //     int positionCount;
+  //     String* positionShortName;
+  //     String* positionLongName;
+  // };
+  // CarSettings* cars;
+  // // dynamic tire temp array
+  // float tireTemps[60];
+  // float currentTemps[60];
+  CarSettings currentResultCar;
+  int tokenIdx = 0;
+  int measureIdx = 0;
+  int tireIdx = 0;
+  int positionIdx = 0;
+  int tempCnt = 0;
+  int measureRange[2] = {99, 99};
+  int tireNameRange[2] = {99, 99};
+  int posNameRange[2] = {99, 99};
+  token = strtok(buf, ";");
+  while(token != NULL)
+  {
+    Serial.print("Current token ");
+    Serial.print(tokenIdx);
+    Serial.print(" >>>>");
+    Serial.print(token);
+    Serial.print("<<<< ");
+    // tokenIdx 0 is date/time
+    // 2 - car name
+    if(tokenIdx < 1)
+    {
+      Serial.println("SKIPPED");
+    }
+    //
+    if(tokenIdx == 1)
+    {
+      Serial.println(" car");
+      currentResultCar.carName = token;
+    }
+    // 3 - tire count
+    else if(tokenIdx == 2)
+    {
+      Serial.println(" tires");
+      currentResultCar.tireCount = atoi(token);
+      currentResultCar.tireShortName = new String[currentResultCar.tireCount];
+      currentResultCar.tireLongName = new String[currentResultCar.tireCount];
+    }
+    // 4 - position count
+    else if(tokenIdx == 3)
+    {
+      Serial.println(" positions");
+      currentResultCar.positionCount = atoi(token);
+      currentResultCar.positionShortName = new String[currentResultCar.positionCount];
+      currentResultCar.positionLongName = new String[currentResultCar.positionCount];
+      tempCnt = currentResultCar.tireCount * currentResultCar.positionCount;
+      measureRange[0]  = tokenIdx + 1;  // measurements start at next token                                   // >= 5
+      measureRange[1]  = measureRange[0] +  (currentResultCar.tireCount *  currentResultCar.positionCount) - 1;   // < 5 + 4*13 (17)
+      tireNameRange[0] = measureRange[1];                                                                     // >= 17
+      tireNameRange[1] = tireNameRange[0] + currentResultCar.tireCount;                                       // < 17 + 4 (21)
+      posNameRange[0]  = tireNameRange[1];                                                                    // >= 21
+      posNameRange[1]  = posNameRange[0] + currentResultCar.positionCount;                                    // < 21 + 3 (24)
+    }
+    // tire temps
+    else if((tokenIdx >= measureRange[0]) && (tokenIdx <= measureRange[1]))
+    {
+      Serial.print(" tireTemps[");
+      Serial.print(measureIdx);
+      Serial.print("] = ");
+      tireTemps[measureIdx] = atof(token);
+      currentTemps[measureIdx] = tireTemps[measureIdx];
+      Serial.println(currentTemps[measureIdx]);
+      measureIdx++;
+      Serial.print("measureIdx++ = ");
+      Serial.println(measureIdx);
+    }
+    // tire names
+    else if((tokenIdx >= tireNameRange[0]) && (tokenIdx <= tireNameRange[1]))
+    {
+      Serial.println(" tire name");
+      currentResultCar.tireShortName[tireIdx] = token;
+      currentResultCar.tireLongName[tireIdx] = token;
+      tireIdx++;
+    }
+    // position names
+    else if((tokenIdx >= posNameRange[0]) && (tokenIdx <= posNameRange[1]))
+    {
+      Serial.println(" position name");
+      currentResultCar.positionShortName[positionIdx] = token;
+      currentResultCar.positionLongName[positionIdx] = token;
+      positionIdx++;
+    }
+    token = strtok(NULL, ";");
+    tokenIdx++;
+  }
+  DisplayCarInfo(currentResultCar, currentTemps);
+}
+//
+//
+//
+void DisplayCarInfo(CarSettings curCarInfo, float temps[])
+{
+  Serial.println("DisplayCarInfo");
+  Serial.println("==============");
+  Serial.println(curCarInfo.carName);
+  Serial.print("Tires: ");
+  Serial.println(curCarInfo.tireCount);
+  for(int idx = 0; idx < curCarInfo.tireCount; idx++)
+  {
+    Serial.print(curCarInfo.tireShortName[idx]);
+    Serial.print(" ");
+    Serial.println(curCarInfo.tireLongName[idx]);
+  }
+  Serial.print("Measurement Positions: ");
+  Serial.println(curCarInfo.positionCount);
+  for(int idx = 0; idx < curCarInfo.positionCount; idx++)
+  {
+    Serial.print(curCarInfo.positionShortName[idx]);
+    Serial.print(" ");
+    Serial.println(curCarInfo.positionLongName[idx]);
+  }
+  Serial.println("Temperatures: ");
+  for(int tidx = 0; tidx < curCarInfo.tireCount; tidx++)
+  {
+    Serial.println(curCarInfo.tireShortName[tidx]);
+    for(int pidx = 0; pidx < curCarInfo.positionCount; pidx++)
+    {
+      Serial.print(curCarInfo.positionShortName[pidx]);
+      Serial.print(" ");
+      Serial.println(temps[(tidx * curCarInfo.positionCount) + pidx]);
+    }
+  }
 }
 //
 //
