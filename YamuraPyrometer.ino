@@ -71,6 +71,7 @@ unsigned long pressDuration[BUTTON_COUNT] = {0, 0, 0, 0};
 struct CarSettings
 {
     String carName;
+    String dateTime;
     int tireCount;
     String* tireShortName;
     String* tireLongName;
@@ -463,25 +464,17 @@ void loop()
       deviceState = DISPLAY_TIRES;
       break;
     case DISPLAY_TIRES:
-      DisplayTireTemps();
+      DisplayTireTemps(cars[selectedCar]);
       deviceState = DISPLAY_MENU;
       break;
     case DISPLAY_SELECTED_RESULT:
       DisplaySelectedResults(SD, "/py_temps.txt");
-      deviceState = DISPLAY_TIRES;
+      deviceState = DISPLAY_MENU;
       break;
     case CHANGE_SETTINGS:
       ChangeSettings();
       deviceState = DISPLAY_MENU;
       break;
-    //case SET_DATETIME:
-    //  SetDateTime();
-    //  deviceState = DISPLAY_MENU;
-    //  break;
-    //case DELETE_DATAFILE:
-    //  DeleteDataFile();
-    //  deviceState = DISPLAY_MENU;
-    //  break;
     default:
       break;
   }
@@ -624,6 +617,7 @@ void MeasureTireTemps()
     {
       Serial.print("RTC failed to update");
     }
+    cars[selectedCar].dateTime = rtc.stringTime();
     curTimeStr = rtc.stringTime();
     curTimeStr += " ";
     curTimeStr += rtc.stringDateUSA();
@@ -672,14 +666,7 @@ void MeasureTireTemps()
 //
 ///
 ///
-void DisplayTireTemps()
-{
-  DisplayToOLED();
-}
-//
-//
-//
-void DisplayToOLED()
+void DisplayTireTemps(CarSettings currentResultCar)
 {
   unsigned long curTime = millis();
   unsigned long priorTime = millis();
@@ -687,21 +674,24 @@ void DisplayToOLED()
   char outStr[255];
   while(true)
   {
-    for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+    for(int idxTire = 0; idxTire < currentResultCar/*cars[selectedCar]*/.tireCount; idxTire++)
     {
       textPosition[1] = 0;
       oledDisplay.setFont(demoFonts[iFont]);  
       oledDisplay.erase();
 	  // trim this to the max width of the display?
-      sprintf(outStr, "%s %s", cars[selectedCar].tireShortName[idxTire].c_str(), 
-                               cars[selectedCar].carName.c_str());
+      sprintf(outStr, currentResultCar.dateTime.c_str());
+      oledDisplay.text(textPosition[0], textPosition[1], outStr);
+      textPosition[1] +=  oledDisplay.getStringHeight(outStr);
+      sprintf(outStr, "%s %s", currentResultCar/*cars[selectedCar]*/.tireShortName[idxTire].c_str(), 
+                               currentResultCar/*cars[selectedCar]*/.carName.c_str());
       oledDisplay.text(textPosition[0], textPosition[1], outStr);
       textPosition[1] +=  oledDisplay.getStringHeight(outStr);
 
-      for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
+      for(int tirePosIdx = 0; tirePosIdx < currentResultCar/*cars[selectedCar]*/.positionCount; tirePosIdx++)
       {
-        sprintf(outStr, "%s: %3.1F", cars[selectedCar].positionLongName[tirePosIdx].c_str(), 
-                                     tireTemps[(cars[selectedCar].tireCount * idxTire) + tirePosIdx]);
+        sprintf(outStr, "%s: %3.1F", currentResultCar/*cars[selectedCar]*/.positionLongName[tirePosIdx].c_str(), 
+                                     tireTemps[(currentResultCar/*cars[selectedCar]*/.tireCount * idxTire) + tirePosIdx]);
         oledDisplay.text(textPosition[0], textPosition[1], outStr);
         textPosition[1] +=  oledDisplay.getStringHeight(outStr);
       }
@@ -1480,7 +1470,15 @@ void WriteSetupFile(fs::FS &fs, const char * path)
 //
 void DisplaySelectedResults(fs::FS &fs, const char * path)
 {
-  ReadToSerial();
+  CarSettings currentResultCar;
+  int tokenIdx = 0;
+  int measureIdx = 0;
+  int tireIdx = 0;
+  int positionIdx = 0;
+  int tempCnt = 0;
+  int measureRange[2] = {99, 99};
+  int tireNameRange[2] = {99, 99};
+  int posNameRange[2] = {99, 99};
   char buf[512];
   char* token;
   File file = SD.open("/py_temps.txt");
@@ -1538,47 +1536,46 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
   // // dynamic tire temp array
   // float tireTemps[60];
   // float currentTemps[60];
-  CarSettings currentResultCar;
-  int tokenIdx = 0;
-  int measureIdx = 0;
-  int tireIdx = 0;
-  int positionIdx = 0;
-  int tempCnt = 0;
-  int measureRange[2] = {99, 99};
-  int tireNameRange[2] = {99, 99};
-  int posNameRange[2] = {99, 99};
   token = strtok(buf, ";");
   while(token != NULL)
   {
+    #ifdef DEBUG_VERBOSE
     Serial.print("Current token ");
     Serial.print(tokenIdx);
     Serial.print(" >>>>");
     Serial.print(token);
-    Serial.print("<<<< ");
+    Serial.println("<<<< ");
+    #endif
     // tokenIdx 0 is date/time
-    // 2 - car name
-    if(tokenIdx < 1)
+    // 0 - timestamp
+    if(tokenIdx == 0)
     {
-      Serial.println("SKIPPED");
+      currentResultCar.dateTime = token;      
+      #ifdef DEBUG_VERBOSE
+      Serial.println("Timestamp");
+      #endif
     }
-    //
+    // 1 - car info
     if(tokenIdx == 1)
     {
-      Serial.println(" car");
       currentResultCar.carName = token;
+      #ifdef DEBUG_VERBOSE
+      Serial.println(" car");
+      #endif
     }
-    // 3 - tire count
+    // 2 - tire count
     else if(tokenIdx == 2)
     {
-      Serial.println(" tires");
       currentResultCar.tireCount = atoi(token);
       currentResultCar.tireShortName = new String[currentResultCar.tireCount];
       currentResultCar.tireLongName = new String[currentResultCar.tireCount];
+      #ifdef DEBUG_VERBOSE
+      Serial.println(" tires");
+      #endif
     }
-    // 4 - position count
+    // 3 - position count
     else if(tokenIdx == 3)
     {
-      Serial.println(" positions");
       currentResultCar.positionCount = atoi(token);
       currentResultCar.positionShortName = new String[currentResultCar.positionCount];
       currentResultCar.positionLongName = new String[currentResultCar.positionCount];
@@ -1589,94 +1586,47 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
       tireNameRange[1] = tireNameRange[0] + currentResultCar.tireCount;                                       // < 17 + 4 (21)
       posNameRange[0]  = tireNameRange[1];                                                                    // >= 21
       posNameRange[1]  = posNameRange[0] + currentResultCar.positionCount;                                    // < 21 + 3 (24)
+      #ifdef DEBUG_VERBOSE
+      Serial.println(" positions");
+      #endif
     }
     // tire temps
     else if((tokenIdx >= measureRange[0]) && (tokenIdx <= measureRange[1]))
     {
+      tireTemps[measureIdx] = atof(token);
+      currentTemps[measureIdx] = tireTemps[measureIdx];
+      #ifdef DEBUG_VERBOSE
       Serial.print(" tireTemps[");
       Serial.print(measureIdx);
       Serial.print("] = ");
-      tireTemps[measureIdx] = atof(token);
-      currentTemps[measureIdx] = tireTemps[measureIdx];
       Serial.println(currentTemps[measureIdx]);
+      #endif
       measureIdx++;
-      Serial.print("measureIdx++ = ");
-      Serial.println(measureIdx);
     }
     // tire names
     else if((tokenIdx >= tireNameRange[0]) && (tokenIdx <= tireNameRange[1]))
     {
-      Serial.println(" tire name");
       currentResultCar.tireShortName[tireIdx] = token;
       currentResultCar.tireLongName[tireIdx] = token;
+      #ifdef DEBUG_VERBOSE
+      Serial.println(" tire name");
+      #endif
       tireIdx++;
     }
     // position names
     else if((tokenIdx >= posNameRange[0]) && (tokenIdx <= posNameRange[1]))
     {
-      Serial.println(" position name");
       currentResultCar.positionShortName[positionIdx] = token;
       currentResultCar.positionLongName[positionIdx] = token;
       positionIdx++;
+      #ifdef DEBUG_VERBOSE
+      Serial.println(" position name");
+      #endif
     }
     token = strtok(NULL, ";");
     tokenIdx++;
   }
-  DisplayCarInfo(currentResultCar, currentTemps);
-}
-//
-//
-//
-void DisplayCarInfo(CarSettings curCarInfo, float temps[])
-{
-  Serial.println("DisplayCarInfo");
-  Serial.println("==============");
-  Serial.println(curCarInfo.carName);
-  Serial.print("Tires: ");
-  Serial.println(curCarInfo.tireCount);
-  for(int idx = 0; idx < curCarInfo.tireCount; idx++)
-  {
-    Serial.print(curCarInfo.tireShortName[idx]);
-    Serial.print(" ");
-    Serial.println(curCarInfo.tireLongName[idx]);
-  }
-  Serial.print("Measurement Positions: ");
-  Serial.println(curCarInfo.positionCount);
-  for(int idx = 0; idx < curCarInfo.positionCount; idx++)
-  {
-    Serial.print(curCarInfo.positionShortName[idx]);
-    Serial.print(" ");
-    Serial.println(curCarInfo.positionLongName[idx]);
-  }
-  Serial.println("Temperatures: ");
-  for(int tidx = 0; tidx < curCarInfo.tireCount; tidx++)
-  {
-    Serial.println(curCarInfo.tireShortName[tidx]);
-    for(int pidx = 0; pidx < curCarInfo.positionCount; pidx++)
-    {
-      Serial.print(curCarInfo.positionShortName[pidx]);
-      Serial.print(" ");
-      Serial.println(temps[(tidx * curCarInfo.positionCount) + pidx]);
-    }
-  }
-}
-//
-//
-//
-void ReadToSerial()
-{
-  char readText[256];
-  File file = SD.open("/py_temps.txt");
-  while(true)
-  {
-     ReadLine(file, readText);
-     if(strlen(readText) == 0)
-     {
-       break;
-     }
-     Serial.println(readText);
-  }
-  file.close();
+  DisplayTireTemps(currentResultCar);
 }
 //
 //
