@@ -132,6 +132,32 @@ float tempRes = 1.0;
 int deviceState = 0;
 
 String curTimeStr;
+
+// function prototypes
+void WriteResultsHTML();
+void ParseResult(char buf[], CarSettings &currentResultCar);
+void button_pressedCallback(uint8_t pinIn);
+void button_releasedCallback(uint8_t pinIn);
+void button_pressedDurationCallback(uint8_t pinIn, unsigned long duration);
+void button_releasedDurationCallback(uint8_t pinIn, unsigned long duration);
+void DeleteFile(fs::FS &fs, const char * path);
+void AppendFile(fs::FS &fs, const char * path, const char * message);
+void ReadLine(File file, char* buf);
+void ParseResult(char buf[], CarSettings &currentResultCar);
+void DisplaySelectedResults(fs::FS &fs, const char * path);
+void WriteSetupFile(fs::FS &fs, const char * path);
+void ReadSetupFile(fs::FS &fs, const char * path);
+void ResetTempStable();
+bool CheckTempStable(float curTemp);
+void DeleteDataFile();
+void SetDateTime();
+void SetUnits();
+void ChangeSettings();
+void SelectCar();
+int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect, int maxWidth);
+void DisplayTireTemps(CarSettings currentResultCar);
+void MeasureTireTemps();
+void DisplayMenu();
 //
 //
 //
@@ -485,8 +511,8 @@ void loop()
 void DisplayMenu()
 {
   int menuCount = 5;
-  choices[0].description = "Car/Driver";      choices[0].result = SELECT_CAR;
-  choices[1].description = "Measure Temps";   choices[1].result = MEASURE_TIRES;
+  choices[0].description = "Measure Temps";   choices[1].result = MEASURE_TIRES;
+  choices[1].description = cars[selectedCar].carName.c_str();      choices[0].result = SELECT_CAR;
   choices[2].description = "Display Temps";   choices[2].result = DISPLAY_TIRES;
   choices[3].description = "Display Results"; choices[3].result = DISPLAY_SELECTED_RESULT;
   choices[4].description = "Settings";        choices[4].result = CHANGE_SETTINGS;
@@ -611,6 +637,14 @@ void MeasureTireTemps()
     }
     tireIdx++;
   }
+  digitalWrite(TEMPSTABLE_LED, LOW);
+  oledDisplay.erase();
+  textPosition[1] = 0;
+  oledDisplay.text(textPosition[0], textPosition[1], "Done");
+  textPosition[1] += oledDisplay.getStringHeight("X");
+  oledDisplay.text(textPosition[0], textPosition[1], "Updating results");
+  oledDisplay.display();
+ 
   // done, copy local to global
   #ifdef HAS_RTC
     if (rtc.updateTime() == false) 
@@ -659,9 +693,14 @@ void MeasureTireTemps()
   }
   #ifdef DEBUG_VERBOSE
   Serial.println(fileLine);
+  Serial.println("Add to results file...");
   #endif
   AppendFile(SD, "/py_temps.txt", fileLine.c_str());
-  digitalWrite(TEMPSTABLE_LED, LOW);
+  // update the results HTML file
+  #ifdef DEBUG_VERBOSE
+  Serial.println("Update HTML file...");
+  #endif
+  WriteResultsHTML();  
 }
 //
 ///
@@ -1262,7 +1301,7 @@ void ReadSetupFile(fs::FS &fs, const char * path)
   #ifdef DEBUG_VERBOSE
   Serial.printf("Reading file: %s\n", path);
   #endif
-  File file = fs.open(path);
+  File file = fs.open(path, FILE_READ);
   if(!file)
   {
     #ifdef DEBUG_VERBOSE
@@ -1481,7 +1520,7 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
   int posNameRange[2] = {99, 99};
   char buf[512];
   char* token;
-  File file = SD.open("/py_temps.txt");
+  File file = SD.open("/py_temps.txt", FILE_READ);
   if(!file)
   {
     #ifdef DEBUG_VERBOSE
@@ -1500,11 +1539,11 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     choices[menuCnt].description = buf;      choices[menuCnt].result = menuCnt;
     menuCnt++;
   }
-  int menuResult =MenuSelect(choices, menuCnt, 6, 0, 19);
+  int menuResult = MenuSelect(choices, menuCnt, 6, 0, 19);
   file.close();
   // at this point, we need to parse the selected line and add to a measurment structure for display
   // get to the correct line
-  file = SD.open("/py_temps.txt");
+  file = SD.open("/py_temps.txt", FILE_READ);
   if(!file)
   {
     #ifdef DEBUG_VERBOSE
@@ -1517,6 +1556,8 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     ReadLine(file, buf);
   } 
   file.close();
+  ParseResult(buf, currentResultCar);
+  /*
   // buf contains the line, now tokenize it
   // format is:
   // date/time car tireCnt positionCnt measurements tireShortNames positionShortNames (tsv)
@@ -1626,7 +1667,284 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     token = strtok(NULL, ";");
     tokenIdx++;
   }
+  */
   DisplayTireTemps(currentResultCar);
+}
+//
+// write HTML display file
+//<!DOCTYPE html>
+//<html>
+//<head>
+//    <title>Recording Pyrometer</title>
+//</head>
+//<body>
+//    <h1>Recorded Results</h1>
+//    <table border="1">
+//        <tr>
+//            <th>Date/Time</th>
+//            <th>Car/Driver</th>
+//        </tr>
+//		    <tr>
+//            <td>07:03:19PM 09/05/2023</td>
+//            <td>Brian Smith Z4</td>
+//			      <td>RF</td>
+//            <td bgcolor="red">O 77.56</td>
+//            <td bgcolor="red">M 77.56</td>
+//            <td bgcolor="green">I 77.45</td>
+//             ... more temp cells
+//        </tr>
+//        ... more car rows
+//    </table>
+//</body>
+//</html>
+//
+void WriteResultsHTML(/*fs::FS &fs, const char * path*/)
+{
+  CarSettings currentResultCar;
+  char buf[512];
+  File fileIn = SD.open("/py_temps.txt", FILE_READ);
+  if(!fileIn)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Failed to open files for TXT file for reading");
+    #endif
+    return;
+  }
+  // create a new HTML file
+  SD.remove("/py_res.htm");
+  AppendFile(SD, "/py_res.html", "<!DOCTYPE html>");
+  AppendFile(SD, "/py_res.html", "<html>");
+  AppendFile(SD, "/py_res.html", "<head>");
+  AppendFile(SD, "/py_res.html", "    <title>Recording Pyrometer</title>");
+  AppendFile(SD, "/py_res.html", "</head>");
+  AppendFile(SD, "/py_res.html", "<body>");
+  AppendFile(SD, "/py_res.html", "    <h1>Recorded Results</h1>");
+  AppendFile(SD, "/py_res.html", "    <table border=\"1\">");
+  AppendFile(SD, "/py_res.html", "        <tr>");
+  AppendFile(SD, "/py_res.html", "            <th>Date/Time</th>");
+  AppendFile(SD, "/py_res.html", "            <th>Car/Driver</th>");
+  AppendFile(SD, "/py_res.html", "        </tr>");
+  float tireMin =  999.9;
+  float tireMax = -999.9;
+  while(true)
+  {
+    ReadLine(fileIn, buf);
+    // end of file
+    if(strlen(buf) == 0)
+    {
+      break;
+    }
+    ParseResult(buf, currentResultCar);
+    AppendFile(SD, "/py_res.html", "		    <tr>");
+    sprintf(buf, "<td>%s</td>", currentResultCar.dateTime.c_str());
+    AppendFile(SD, "/py_res.html", buf);
+    #ifdef DEBUG_VERBOSE
+    Serial.print("date time ");
+    Serial.println(buf);
+    #endif
+    sprintf(buf, "<td>%s</td>", currentResultCar.carName.c_str());
+    AppendFile(SD, "/py_res.html", buf);
+    #ifdef DEBUG_VERBOSE
+    Serial.print("car ");
+    Serial.println(buf);
+    #endif
+    for(int t_idx = 0; t_idx < currentResultCar.tireCount; t_idx++)
+    {
+      tireMin =  999.9;
+      tireMax = -999.9;
+      sprintf(buf, "<td>%s</td>", currentResultCar.tireShortName[t_idx].c_str());
+      #ifdef DEBUG_VERBOSE
+      Serial.print("tire ");
+      Serial.println(buf);
+      #endif
+      // get min/max temps
+      for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
+      {
+        tireMin = tireMin < tireTemps[(currentResultCar.tireCount * t_idx) + p_idx] ? tireMin : tireTemps[(currentResultCar.tireCount * t_idx) + p_idx];
+        tireMax = tireMax > tireTemps[(currentResultCar.tireCount * t_idx) + p_idx] ? tireMax : tireTemps[(currentResultCar.tireCount * t_idx) + p_idx];
+      }
+      #ifdef DEBUG_VERBOSE
+      Serial.print("tire temp range ");
+      Serial.print(tireMin);
+      Serial.print(" - ");
+      Serial.println(tireMax);
+      #endif
+      // add cells to file
+      for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
+      {
+        if(tireTemps[(currentResultCar.tireCount * t_idx) + p_idx] == tireMin)
+        {
+          sprintf(buf, "<td bgcolor=\"green\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(currentResultCar.tireCount * t_idx) + p_idx]);
+        }
+        else if (tireTemps[(currentResultCar.tireCount * t_idx) + p_idx] == tireMax)
+        {
+          sprintf(buf, "<td bgcolor=\"red\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(currentResultCar.tireCount * t_idx) + p_idx]);
+        }
+        else
+        {
+          sprintf(buf, "<td bgcolor=\"orange\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(currentResultCar.tireCount * t_idx) + p_idx]);
+        }
+        #ifdef DEBUG_VERBOSE
+        Serial.print("tire ");
+        Serial.print(t_idx);
+        Serial.print("position ");
+        Serial.print(p_idx);
+        Serial.print(" ");
+        Serial.println(buf);
+        #endif
+        AppendFile(SD, "/py_res.html", buf);
+      }
+    }
+    #ifdef DEBUG_VERBOSE
+    Serial.println("end of row");
+    #endif
+    AppendFile(SD, "/py_res.html", "		    </tr>");
+  }
+  #ifdef DEBUG_VERBOSE
+  Serial.println("end of file");
+  #endif
+  fileIn.close();
+  AppendFile(SD, "/py_res.html", "    </table>");
+  AppendFile(SD, "/py_res.html", "</body>");
+  AppendFile(SD, "/py_res.html", "</html>");
+  
+  //fileIn = SD.open("/py_res.html", FILE_READ);
+  while(true)
+  {
+    ReadLine(fileIn, buf);
+    // end of file
+    if(strlen(buf) == 0)
+    {
+      break;
+    }
+    Serial.println(buf);
+  }
+  //fileIn.close();
+}
+//
+//
+//
+void ParseResult(char buf[], CarSettings &currentResultCar)
+{
+  int tokenIdx = 0;
+  int measureIdx = 0;
+  int tireIdx = 0;
+  int positionIdx = 0;
+  int tempCnt = 0;
+  int measureRange[2] = {99, 99};
+  int tireNameRange[2] = {99, 99};
+  int posNameRange[2] = {99, 99};
+  char* token;
+  // parse the current line and add to a measurment structure for display
+  // buf contains the line, now tokenize it
+  // format is:
+  // date/time car tireCnt positionCnt measurements tireShortNames positionShortNames (tsv)
+  // structures to hold data
+  // car info structure
+  // struct CarSettings
+  // {
+  //     String carName;
+  //     int tireCount;
+  //     String* tireShortName;
+  //     String* tireLongName;
+  //     int positionCount;
+  //     String* positionShortName;
+  //     String* positionLongName;
+  // };
+  // CarSettings* cars;
+  // // dynamic tire temp array
+  // float tireTemps[60];
+  // float currentTemps[60];
+  token = strtok(buf, ";");
+  while(token != NULL)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.print("Current token ");
+    Serial.print(tokenIdx);
+    Serial.print(" >>>>");
+    Serial.print(token);
+    Serial.println("<<<< ");
+    #endif
+    // tokenIdx 0 is date/time
+    // 0 - timestamp
+    if(tokenIdx == 0)
+    {
+      currentResultCar.dateTime = token;      
+      #ifdef DEBUG_VERBOSE
+      Serial.println("Timestamp");
+      #endif
+    }
+    // 1 - car info
+    if(tokenIdx == 1)
+    {
+      currentResultCar.carName = token;
+      #ifdef DEBUG_VERBOSE
+      Serial.println(" car");
+      #endif
+    }
+    // 2 - tire count
+    else if(tokenIdx == 2)
+    {
+      currentResultCar.tireCount = atoi(token);
+      currentResultCar.tireShortName = new String[currentResultCar.tireCount];
+      currentResultCar.tireLongName = new String[currentResultCar.tireCount];
+      #ifdef DEBUG_VERBOSE
+      Serial.println(" tires");
+      #endif
+    }
+    // 3 - position count
+    else if(tokenIdx == 3)
+    {
+      currentResultCar.positionCount = atoi(token);
+      currentResultCar.positionShortName = new String[currentResultCar.positionCount];
+      currentResultCar.positionLongName = new String[currentResultCar.positionCount];
+      tempCnt = currentResultCar.tireCount * currentResultCar.positionCount;
+      measureRange[0]  = tokenIdx + 1;  // measurements start at next token                                   // >= 5
+      measureRange[1]  = measureRange[0] +  (currentResultCar.tireCount *  currentResultCar.positionCount) - 1;   // < 5 + 4*13 (17)
+      tireNameRange[0] = measureRange[1];                                                                     // >= 17
+      tireNameRange[1] = tireNameRange[0] + currentResultCar.tireCount;                                       // < 17 + 4 (21)
+      posNameRange[0]  = tireNameRange[1];                                                                    // >= 21
+      posNameRange[1]  = posNameRange[0] + currentResultCar.positionCount;                                    // < 21 + 3 (24)
+      #ifdef DEBUG_VERBOSE
+      Serial.println(" positions");
+      #endif
+    }
+    // tire temps
+    else if((tokenIdx >= measureRange[0]) && (tokenIdx <= measureRange[1]))
+    {
+      tireTemps[measureIdx] = atof(token);
+      currentTemps[measureIdx] = tireTemps[measureIdx];
+      #ifdef DEBUG_VERBOSE
+      Serial.print(" tireTemps[");
+      Serial.print(measureIdx);
+      Serial.print("] = ");
+      Serial.println(currentTemps[measureIdx]);
+      #endif
+      measureIdx++;
+    }
+    // tire names
+    else if((tokenIdx >= tireNameRange[0]) && (tokenIdx <= tireNameRange[1]))
+    {
+      currentResultCar.tireShortName[tireIdx] = token;
+      currentResultCar.tireLongName[tireIdx] = token;
+      #ifdef DEBUG_VERBOSE
+      Serial.println(" tire name");
+      #endif
+      tireIdx++;
+    }
+    // position names
+    else if((tokenIdx >= posNameRange[0]) && (tokenIdx <= posNameRange[1]))
+    {
+      currentResultCar.positionShortName[positionIdx] = token;
+      currentResultCar.positionLongName[positionIdx] = token;
+      positionIdx++;
+      #ifdef DEBUG_VERBOSE
+      Serial.println(" position name");
+      #endif
+    }
+    token = strtok(NULL, ";");
+    tokenIdx++;
+  }
 }
 //
 //
@@ -1708,7 +2026,6 @@ void DeleteFile(fs::FS &fs, const char * path)
     #endif
   }
 }
-
 //
 // handle pressed state
 //
