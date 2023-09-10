@@ -511,13 +511,13 @@ void loop()
 void DisplayMenu()
 {
   int menuCount = 5;
-  choices[0].description = "Measure Temps";   choices[1].result = MEASURE_TIRES;
-  choices[1].description = cars[selectedCar].carName.c_str();      choices[0].result = SELECT_CAR;
+  choices[0].description = "Measure Temps";   choices[0].result = MEASURE_TIRES;
+  choices[1].description = cars[selectedCar].carName.c_str();      choices[1].result = SELECT_CAR;
   choices[2].description = "Display Temps";   choices[2].result = DISPLAY_TIRES;
   choices[3].description = "Display Results"; choices[3].result = DISPLAY_SELECTED_RESULT;
   choices[4].description = "Settings";        choices[4].result = CHANGE_SETTINGS;
   
-  deviceState =  MenuSelect(choices, menuCount, 6, SELECT_CAR, 19); 
+  deviceState =  MenuSelect(choices, menuCount, 6, MEASURE_TIRES, 19); 
 }
 //
 // 
@@ -1711,7 +1711,10 @@ void WriteResultsHTML(/*fs::FS &fs, const char * path*/)
     return;
   }
   // create a new HTML file
-  SD.remove("/py_res.htm");
+  if(!SD.remove("/py_res.html"))
+  {
+    Serial.print("failed to delete /py_res.html");
+  }
   AppendFile(SD, "/py_res.html", "<!DOCTYPE html>");
   AppendFile(SD, "/py_res.html", "<html>");
   AppendFile(SD, "/py_res.html", "<head>");
