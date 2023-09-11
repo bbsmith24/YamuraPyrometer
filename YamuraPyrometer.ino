@@ -25,6 +25,10 @@
   wifi interface for display, up/down load (to add)
 */
 
+ #include <Arduino.h>
+#include <WiFi.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 #include <SparkFun_MCP9600.h>
 #include <SparkFun_Qwiic_OLED.h> //http://librarymanager/All#SparkFun_Qwiic_Graphic_OLED
 #include "InputDebounce.h"
@@ -42,6 +46,7 @@
 
 // uncomment for debug to serial monitor
 //#define DEBUG_VERBOSE
+#define XDEBUG_VERBOSE
 // uncomment for RTC module attached
 #define HAS_RTC
 
@@ -78,6 +83,7 @@ struct CarSettings
     int positionCount;
     String* positionShortName;
     String* positionLongName;
+    float* maxTemp;
 };
 CarSettings* cars;
 // dynamic tire temp array
@@ -441,7 +447,7 @@ void setup()
   #endif
   // uncomment to write a default setup file
   // maybe check for setup and write one if needed?
-  //deleteFile(SD, "/py_setup.txt");
+  //DeleteFile(SD, "/py_setup.txt");
   //WriteSetupFile(SD, "/py_setup.txt");
   ReadSetupFile(SD,  "/py_setup.txt");
 
@@ -673,23 +679,24 @@ void MeasureTireTemps()
       tireTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition] = currentTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition];
       //outStr = strcat(outStr, "\t");
       //outStr = strcat(outStr, sprintf("%.2f", tireTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition]));
-      fileLine += ';';//(9);
+      fileLine += ';';
       fileLine += tireTemps[(cars[selectedCar].tireCount * idxTire) + idxPosition];
     }
   }
   for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
   {
-    //outStr = strcat(outStr, "\t");
-    //outStr = strcat(outStr, cars[selectedCar].tireShortName[idxTire].c_str());
-    fileLine += ';';//(9);
+    fileLine += ';';
     fileLine += cars[selectedCar].tireShortName[idxTire];
   }
   for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
   {
-    //outStr = strcat(outStr, "\t");
-    //outStr = strcat(outStr, cars[selectedCar].positionShortName[idxPosition].c_str());
-    fileLine += ';';//char(9);
+    fileLine += ';';
     fileLine += cars[selectedCar].positionShortName[idxPosition];
+  }
+  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  {
+    fileLine += ';';
+    fileLine += cars[selectedCar].maxTemp[idxTire];
   }
   #ifdef DEBUG_VERBOSE
   Serial.println(fileLine);
@@ -1298,6 +1305,8 @@ void ResetTempStable()
 //
 void ReadSetupFile(fs::FS &fs, const char * path)
 {
+  Serial.print("Read setup file ");
+  Serial.println(path);
   #ifdef DEBUG_VERBOSE
   Serial.printf("Reading file: %s\n", path);
   #endif
@@ -1325,6 +1334,7 @@ void ReadSetupFile(fs::FS &fs, const char * path)
     ReadLine(file, buf);
     cars[carIdx].tireCount = atoi(buf);
     maxTires = maxTires > cars[carIdx].tireCount ? maxTires : cars[carIdx].tireCount;
+    cars[carIdx].maxTemp = (float*)calloc(maxTires, sizeof(float));
     cars[carIdx].tireShortName = new String[cars[carIdx].tireCount];
     cars[carIdx].tireLongName = new String[cars[carIdx].tireCount];
     // read tire short and long names
@@ -1334,6 +1344,8 @@ void ReadSetupFile(fs::FS &fs, const char * path)
       cars[carIdx].tireShortName[tireIdx] = buf;
       ReadLine(file, buf);
       cars[carIdx].tireLongName[tireIdx] = buf;
+      ReadLine(file, buf);
+      cars[carIdx].maxTemp[tireIdx] = atof(buf);
     }
     // read measurement count and create arrays
     ReadLine(file, buf);
@@ -1372,7 +1384,9 @@ void ReadSetupFile(fs::FS &fs, const char * path)
     {
       Serial.print(cars[carIdx].tireShortName[idx]);
       Serial.print(" ");
-      Serial.println(cars[carIdx].tireLongName[idx]);
+      Serial.print(cars[carIdx].tireLongName[idx]);
+      Serial.print(" ");
+      Serial.println(cars[carIdx].maxTemp[idx]);
     }
 
     Serial.print("Measurements (");
@@ -1414,12 +1428,16 @@ void WriteSetupFile(fs::FS &fs, const char * path)
   file.println("4");           // wheels
   file.println("RF");
   file.println("Right Front");
+  file.println("110.0");
   file.println("LF");
   file.println("Left Front");
+  file.println("110.0");
   file.println("LR");
   file.println("Left Rear");
+  file.println("110.0");
   file.println("RR");
   file.println("Right Rear");
+  file.println("110.0");
   file.println("3");           // Measurements
   file.println("O");
   file.println("Outer");
@@ -1432,12 +1450,16 @@ void WriteSetupFile(fs::FS &fs, const char * path)
   file.println("4");           // wheels
   file.println("RF");
   file.println("Right Front");
+  file.println("110.0");
   file.println("LF");
   file.println("Left Front");
+  file.println("110.0");
   file.println("LR");
   file.println("Left Rear");
+  file.println("110.0");
   file.println("RR");
   file.println("Right Rear");
+  file.println("110.0");
   file.println("3");           // Measurements
   file.println("O");
   file.println("Outer");
@@ -1450,16 +1472,22 @@ void WriteSetupFile(fs::FS &fs, const char * path)
   file.println("6");           // wheels
   file.println("RF");
   file.println("Right Front");
+  file.println("110.0");
   file.println("RM");
   file.println("Right Mid");
+  file.println("110.0");
   file.println("LF");
   file.println("Left Front");
+  file.println("110.0");
   file.println("LM");
   file.println("Left Mid");
+  file.println("110.0");
   file.println("LR");
   file.println("Left Rear");
+  file.println("110.0");
   file.println("RR");
   file.println("Right Rear");
+  file.println("110.0");
   file.println("3");           // Measurements
   file.println("O");
   file.println("Outer");
@@ -1472,8 +1500,10 @@ void WriteSetupFile(fs::FS &fs, const char * path)
   file.println("2");           // wheels
   file.println("F");
   file.println("Front");
+  file.println("110.0");
   file.println("R");
   file.println("Rear");
+  file.println("110.0");
   file.println("3");           // Measurements
   file.println("O");
   file.println("Outer");
@@ -1486,10 +1516,13 @@ void WriteSetupFile(fs::FS &fs, const char * path)
   file.println("3");           // wheels
   file.println("RF");
   file.println("Right Front");
+  file.println("110.0");
   file.println("LF");
   file.println("Left Front");
+  file.println("110.0");
   file.println("R");
   file.println("Rear");
+  file.println("110.0");
   file.println("3");           // Measurements
   file.println("O");
   file.println("Outer");
@@ -1649,6 +1682,7 @@ void WriteResultsHTML(/*fs::FS &fs, const char * path*/)
       Serial.print("tire ");
       Serial.println(buf);
       #endif
+      AppendFile(SD, "/py_res.html", buf);
       // get min/max temps
       for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
       {
@@ -1660,21 +1694,27 @@ void WriteResultsHTML(/*fs::FS &fs, const char * path*/)
       Serial.print(tireMin);
       Serial.print(" - ");
       Serial.println(tireMax);
+      Serial.print(" overheat ");
+      Serial.println(currentResultCar.maxTemp[t_idx]);
       #endif
       // add cells to file
       for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
       {
-        if(tireTemps[(currentResultCar.tireCount * t_idx) + p_idx] == tireMin)
-        {
-          sprintf(buf, "<td bgcolor=\"green\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(currentResultCar.tireCount * t_idx) + p_idx]);
-        }
-        else if (tireTemps[(currentResultCar.tireCount * t_idx) + p_idx] == tireMax)
+        if(tireTemps[(currentResultCar.tireCount * t_idx) + p_idx] >= currentResultCar.maxTemp[t_idx])
         {
           sprintf(buf, "<td bgcolor=\"red\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(currentResultCar.tireCount * t_idx) + p_idx]);
         }
+        else if(tireTemps[(currentResultCar.tireCount * t_idx) + p_idx] == tireMin)
+        {
+          sprintf(buf, "<td bgcolor=\"cyan\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(currentResultCar.tireCount * t_idx) + p_idx]);
+        }
+        else if (tireTemps[(currentResultCar.tireCount * t_idx) + p_idx] == tireMax)
+        {
+          sprintf(buf, "<td bgcolor=\"yellow\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(currentResultCar.tireCount * t_idx) + p_idx]);
+        }
         else
         {
-          sprintf(buf, "<td bgcolor=\"orange\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(currentResultCar.tireCount * t_idx) + p_idx]);
+          sprintf(buf, "<td>%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(currentResultCar.tireCount * t_idx) + p_idx]);
         }
         #ifdef DEBUG_VERBOSE
         Serial.print("tire ");
@@ -1723,9 +1763,11 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
   int tireIdx = 0;
   int positionIdx = 0;
   int tempCnt = 0;
+  int maxTempIdx = 0;
   int measureRange[2] = {99, 99};
   int tireNameRange[2] = {99, 99};
   int posNameRange[2] = {99, 99};
+  int maxTempRange[2] = {99, 99};
   char* token;
   // parse the current line and add to a measurment structure for display
   // buf contains the line, now tokenize it
@@ -1780,6 +1822,7 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
       currentResultCar.tireCount = atoi(token);
       currentResultCar.tireShortName = new String[currentResultCar.tireCount];
       currentResultCar.tireLongName = new String[currentResultCar.tireCount];
+      currentResultCar.maxTemp = (float*)calloc(currentResultCar.tireCount, sizeof(float));
       #ifdef DEBUG_VERBOSE
       Serial.println(" tires");
       #endif
@@ -1797,6 +1840,8 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
       tireNameRange[1] = tireNameRange[0] + currentResultCar.tireCount;                                       // < 17 + 4 (21)
       posNameRange[0]  = tireNameRange[1];                                                                    // >= 21
       posNameRange[1]  = posNameRange[0] + currentResultCar.positionCount;                                    // < 21 + 3 (24)
+      maxTempRange[0]  = posNameRange[1];                                                                    // >= 21
+      maxTempRange[1]  = maxTempRange[0] + currentResultCar.tireCount;                                    // < 21 + 3 (24)
       #ifdef DEBUG_VERBOSE
       Serial.println(" positions");
       #endif
@@ -1834,6 +1879,15 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
       Serial.println(" position name");
       #endif
     }
+    // max temps
+    else if((tokenIdx >= maxTempRange[0]) && (tokenIdx <= maxTempRange[1]))
+    {
+      currentResultCar.maxTemp[maxTempIdx] = atof(token);
+      maxTempIdx++;
+      #ifdef DEBUG_VERBOSE
+      Serial.println(" max temp value");
+      #endif
+    }
     token = strtok(NULL, ";");
     tokenIdx++;
   }
@@ -1865,6 +1919,9 @@ void ReadLine(File file, char* buf)
     bufIdx++;
     buf[bufIdx] = '\0';
   } while (c != 0x10);
+  #ifdef DEBUG_VERBOSE
+  Serial.println(buf);
+  #endif
   return;
 }
 //
