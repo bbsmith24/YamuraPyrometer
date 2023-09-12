@@ -88,7 +88,7 @@ struct CarSettings
 };
 CarSettings* cars;
 // dynamic tire temp array
-float tireTemps[60]; // largest array 12 tires, 5 measurements
+float tireTemps[60];
 float currentTemps[60];
 
 String curMenu[50];
@@ -487,11 +487,13 @@ void setup()
   WriteResultsHTML();
   WiFi.softAP(ssid, pass);
   IP = WiFi.softAPIP();
+  #ifdef VERBOSE_DEBUG
   Serial.print("AP IP address: ");
   Serial.println(IP);
   Serial.print(ssid);
   Serial.print(" ");
   Serial.println(pass);
+  #endif
   server.on("/", HTTP_GET, handleRoot);
   server.onNotFound(handleNotFound);
   wsServoInput.onEvent(onServoInputWebSocketEvent);
@@ -1346,9 +1348,9 @@ void ResetTempStable()
 //
 void ReadSetupFile(fs::FS &fs, const char * path)
 {
+  #ifdef DEBUG_VERBOSE
   Serial.print("Read setup file ");
   Serial.println(path);
-  #ifdef DEBUG_VERBOSE
   Serial.printf("Reading file: %s\n", path);
   #endif
   File file = fs.open(path, FILE_READ);
