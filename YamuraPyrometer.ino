@@ -158,7 +158,6 @@ void button_releasedDurationCallback(uint8_t pinIn, unsigned long duration);
 void DeleteFile(fs::FS &fs, const char * path);
 void AppendFile(fs::FS &fs, const char * path, const char * message);
 void ReadLine(File file, char* buf);
-void ParseResult(char buf[], CarSettings &currentResultCar);
 void DisplaySelectedResults(fs::FS &fs, const char * path);
 void WriteSetupFile(fs::FS &fs, const char * path);
 void ReadSetupFile(fs::FS &fs, const char * path);
