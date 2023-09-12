@@ -588,11 +588,11 @@ void MeasureTireTemps()
                                                                        cars[selectedCar].positionCount);
   Serial.print(outStr);
   #endif
+  // text font
+  iFont = 0;
+  //
   while(tireIdx < cars[selectedCar].tireCount)
   {
-    // text font
-    iFont = 0;
-   
     measIdx = 0;  // measure location - O, M, I
     for(int idx = 0; idx < cars[selectedCar].positionCount; idx++)
     {
@@ -600,8 +600,8 @@ void MeasureTireTemps()
     }
     ResetTempStable();
     digitalWrite(TEMPSTABLE_LED, LOW);
-    unsigned long priorTime = 0;
-    unsigned long curTime = 0;
+    unsigned long priorTime = millis();
+    unsigned long curTime = millis();
     // text position on OLED screen
     textPosition[0] = 5;
     textPosition[1] = 0;
@@ -655,9 +655,10 @@ void MeasureTireTemps()
         // text string location
         textPosition[0] = 5;
         textPosition[1] = 0;
-        oledDisplay.setFont(demoFonts[iFont]);  
         oledDisplay.erase();
-        oledDisplay.text(textPosition[0], textPosition[1], cars[selectedCar].tireLongName[tireIdx]);
+        oledDisplay.setFont(demoFonts[iFont]);  
+        sprintf(outStr, "%s", cars[selectedCar].tireLongName[tireIdx].c_str());
+        oledDisplay.text(textPosition[0], textPosition[1], outStr);
         textPosition[1] +=  oledDisplay.getStringHeight(outStr);
 
         for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
