@@ -71,6 +71,7 @@ static InputDebounce buttonArray[BUTTON_COUNT];
 int buttonPin[BUTTON_COUNT] = {BUTTON_1, BUTTON_2, BUTTON_3, BUTTON_4};
 int buttonReleased[BUTTON_COUNT] = {0, 0, 0, 0};
 unsigned long pressDuration[BUTTON_COUNT] = {0, 0, 0, 0};
+char buf[512];
 
 // car info structure
 struct CarSettings
@@ -138,6 +139,14 @@ float tempRes = 1.0;
 int deviceState = 0;
 
 String curTimeStr;
+unsigned long previousMillis = 0;
+unsigned long currentMillis = 0;
+const char* ssid     = "Yamura-Pyrometer";
+const char* pass = "ZoeyDora48375";
+IPAddress IP;
+AsyncWebServer server(80);
+AsyncWebSocket wsServoInput("/ServoInput");
+String htmlStr;
 
 // function prototypes
 void WriteResultsHTML();
@@ -469,13 +478,42 @@ void setup()
   oledDisplay.erase();
   oledDisplay.text(5, 0, "Ready!");
   #ifdef HAS_RTC
-  oledDisplay.text(5, 2 * oledDisplay.getStringHeight("X"), rtc.stringTime());
-  oledDisplay.text(5, 4 * oledDisplay.getStringHeight("X"), rtc.stringDateUSA());
+  oledDisplay.text(5, 1 * oledDisplay.getStringHeight("X"), rtc.stringTime());
+  oledDisplay.text(5, 2 * oledDisplay.getStringHeight("X"), rtc.stringDateUSA());
   #endif
-  oledDisplay.display();
-  delay(5000);
   prior = millis();
   deviceState = DISPLAY_MENU;
+
+  WriteResultsHTML();
+  WiFi.softAP(ssid, pass);
+  IP = WiFi.softAPIP();
+  Serial.print("AP IP address: ");
+  Serial.println(IP);
+  Serial.print(ssid);
+  Serial.print(" ");
+  Serial.println(pass);
+  server.on("/", HTTP_GET, handleRoot);
+  server.onNotFound(handleNotFound);
+  wsServoInput.onEvent(onServoInputWebSocketEvent);
+  server.addHandler(&wsServoInput);
+  server.begin();
+  #ifdef DEBUG_VERBOSE
+  Serial.print(IP);
+  Serial.print(" ");
+  Serial.println(pass);
+  #endif
+  server.on("/", HTTP_GET, handleRoot);
+  server.onNotFound(handleNotFound);
+  wsServoInput.onEvent(onServoInputWebSocketEvent);
+  server.addHandler(&wsServoInput);
+  server.begin();
+  #ifdef DEBUG_VERBOSE
+  Serial.println("HTTP server started");
+  #endif
+  sprintf(buf, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
+  oledDisplay.text(5, 3 * oledDisplay.getStringHeight(buf), buf);
+  oledDisplay.display();
+  delay(5000);
 }
 //
 //print the thermocouple, ambient and delta temperatures every 200ms if available
@@ -994,14 +1032,18 @@ void SelectCar()
 //
 void ChangeSettings()
 {
-  int menuCount = 4;
+  int menuCount = 6;
   int result =  0;
   while(result != 3)
   {
     choices[0].description = "Set Date/Time"; choices[0].result = 0;
     choices[1].description = "Set Units";     choices[1].result = 1;
     choices[2].description = "Delete Data";   choices[2].result = 2;
-    choices[3].description = "Exit";          choices[3].result = 3;
+    sprintf(buf, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
+    choices[3].description = buf;             choices[3].result = 4;
+    sprintf(buf, "Pass %s", pass);
+    choices[4].description = buf;             choices[4].result = 4;
+    choices[5].description = "Exit";          choices[5].result = 3;
     result =  MenuSelect(choices, menuCount, 6, 0, 19); 
     switch(result)
     {
@@ -1015,7 +1057,7 @@ void ChangeSettings()
         DeleteDataFile();
         break;
       default:
-      break;
+        break;
     }
   }
 }
@@ -1318,8 +1360,6 @@ void ReadSetupFile(fs::FS &fs, const char * path)
     #endif
     return;
   }
-  char buf[512];
-
   ReadLine(file, buf);
   carCount = atoi(buf);
   cars = new CarSettings[carCount];
@@ -1551,7 +1591,6 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
   int measureRange[2] = {99, 99};
   int tireNameRange[2] = {99, 99};
   int posNameRange[2] = {99, 99};
-  char buf[512];
   char* token;
   File file = SD.open("/py_temps.txt", FILE_READ);
   if(!file)
@@ -1620,10 +1659,10 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
 //</body>
 //</html>
 //
-void WriteResultsHTML(/*fs::FS &fs, const char * path*/)
+void WriteResultsHTML()
 {
+  htmlStr = "";
   CarSettings currentResultCar;
-  char buf[512];
   File fileIn = SD.open("/py_temps.txt", FILE_READ);
   if(!fileIn)
   {
@@ -1740,7 +1779,11 @@ void WriteResultsHTML(/*fs::FS &fs, const char * path*/)
   AppendFile(SD, "/py_res.html", "</body>");
   AppendFile(SD, "/py_res.html", "</html>");
   
-  //fileIn = SD.open("/py_res.html", FILE_READ);
+  fileIn = SD.open("/py_res.html", FILE_READ);
+  if(!fileIn)
+  {
+    return;
+  }
   while(true)
   {
     ReadLine(fileIn, buf);
@@ -1749,9 +1792,9 @@ void WriteResultsHTML(/*fs::FS &fs, const char * path*/)
     {
       break;
     }
-    Serial.println(buf);
+    htmlStr += buf;
   }
-  //fileIn.close();
+  fileIn.close();
 }
 //
 //
@@ -2014,4 +2057,78 @@ void button_pressedDurationCallback(uint8_t pinIn, unsigned long duration)
 //
 void button_releasedDurationCallback(uint8_t pinIn, unsigned long duration)
 {
+}
+//
+//
+//
+void handleRoot(AsyncWebServerRequest *request) 
+{
+  #ifdef DEBUG_VERBOSE
+  Serial.println("send HOMEPAGE");
+  #endif
+  //digitalWrite(GREEN_LED, HIGH);
+  //digitalWrite(RED_LED, LOW);
+  //request->send_P(200, "text/html", htmlHomePage);
+  request->send_P(200, "text/html", htmlStr.c_str());
+}
+//
+//
+//
+void handleNotFound(AsyncWebServerRequest *request) 
+{
+  request->send(404, "text/plain", "File Not Found");
+  //digitalWrite(RED_LED, HIGH);
+  //digitalWrite(GREEN_LED, LOW);
+}
+//
+//
+//
+void onServoInputWebSocketEvent(AsyncWebSocket *server, 
+                      AsyncWebSocketClient *client, 
+                      AwsEventType type,
+                      void *arg, 
+                      uint8_t *data, 
+                      size_t len) 
+{                      
+  switch (type) 
+  {
+    case WS_EVT_CONNECT:
+      #ifdef DEBUG_VERBOSE
+      Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+      #endif
+      //digitalWrite(GREEN_LED, HIGH);
+      //digitalWrite(RED_LED, LOW);
+      break;
+    case WS_EVT_DISCONNECT:
+      #ifdef DEBUG_VERBOSE
+      Serial.printf("WebSocket client #%u disconnected\n", client->id());
+      #endif
+      //digitalWrite(RED_LED, HIGH);
+      //digitalWrite(GREEN_LED, LOW);
+      break;
+    case WS_EVT_DATA:
+      /*
+      AwsFrameInfo *info;
+      info = (AwsFrameInfo*)arg;
+      if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) 
+      {
+        std::string myData = "";
+        myData.assign((char *)data, len);
+        std::istringstream ss(myData);
+        std::string key, value;
+        std::getline(ss, key, ',');
+        std::getline(ss, value, ',');
+        if ( value != "" )
+        {
+          int valueInt = atoi(value.c_str());
+        }
+      }
+      */
+      break;
+    case WS_EVT_PONG:
+    case WS_EVT_ERROR:
+      break;
+    default:
+      break;  
+  }
 }
