@@ -25,7 +25,7 @@
   wifi interface for display, up/down load (to add)
 */
 
- #include <Arduino.h>
+#include <Arduino.h>
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
@@ -51,12 +51,14 @@
 #define HAS_RTC
 
 #define TEMPSTABLE_LED 4
-#define BUTTON_1 12
-#define BUTTON_2 27
-#define BUTTON_3 33
-#define BUTTON_4 15
+//#define BUTTON_1 12
+//#define BUTTON_2 27
+//#define BUTTON_3 33
+#define BUTTON_1 26
+#define BUTTON_2 12 //25
+#define BUTTON_3 25 //12
 #define BUTTON_DEBOUNCE_DELAY   20   // [ms]
-#define BUTTON_COUNT 4
+#define BUTTON_COUNT 3
 
 #define DISPLAY_MENU 0
 #define SELECT_CAR 1
@@ -68,9 +70,9 @@
 #define DELETE_DATAFILE 7
 
 static InputDebounce buttonArray[BUTTON_COUNT];
-int buttonPin[BUTTON_COUNT] = {BUTTON_1, BUTTON_2, BUTTON_3, BUTTON_4};
-int buttonReleased[BUTTON_COUNT] = {0, 0, 0, 0};
-unsigned long pressDuration[BUTTON_COUNT] = {0, 0, 0, 0};
+int buttonPin[BUTTON_COUNT] = {BUTTON_1, BUTTON_2, BUTTON_3};
+int buttonReleased[BUTTON_COUNT] = {0, 0, 0};
+unsigned long pressDuration[BUTTON_COUNT] = {0, 0, 0};
 char buf[512];
 
 // car info structure
@@ -1182,12 +1184,12 @@ void SetDateTime()
       else if(buttonReleased[1])
       {
         buttonReleased[1] = false;
-        delta = 1;
+        delta = -1;
       }
       else if(buttonReleased[2])
       {
         buttonReleased[2] = false;
-        delta = -1;
+        delta = 1;
       }
       else
       {
