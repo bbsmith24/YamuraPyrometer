@@ -60,14 +60,13 @@
 #define BUTTON_DEBOUNCE_DELAY   20   // [ms]
 #define BUTTON_COUNT 3
 
-#define DISPLAY_MENU 0
-#define SELECT_CAR 1
-#define MEASURE_TIRES 2
-#define DISPLAY_TIRES 3
+#define DISPLAY_MENU            0
+#define SELECT_CAR              1
+#define MEASURE_TIRES           2
+#define DISPLAY_TIRES           3
 #define DISPLAY_SELECTED_RESULT 4
-#define SET_DATETIME 5
-#define CHANGE_SETTINGS 6
-#define DELETE_DATAFILE 7
+#define CHANGE_SETTINGS         5
+#define INSTANT_TEMP            6
 
 static InputDebounce buttonArray[BUTTON_COUNT];
 int buttonPin[BUTTON_COUNT] = {BUTTON_1, BUTTON_2, BUTTON_3};
@@ -174,6 +173,7 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
 void DisplayTireTemps(CarSettings currentResultCar);
 void MeasureTireTemps();
 void DisplayMenu();
+void InstantTemp();
 //
 //
 //
@@ -548,6 +548,10 @@ void loop()
       ChangeSettings();
       deviceState = DISPLAY_MENU;
       break;
+    case INSTANT_TEMP:
+      InstantTemp();
+      deviceState = DISPLAY_MENU;
+      break;
     default:
       break;
   }
@@ -557,12 +561,13 @@ void loop()
 //
 void DisplayMenu()
 {
-  int menuCount = 5;
-  choices[0].description = "Measure Temps";   choices[0].result = MEASURE_TIRES;
-  choices[1].description = cars[selectedCar].carName.c_str();      choices[1].result = SELECT_CAR;
-  choices[2].description = "Display Temps";   choices[2].result = DISPLAY_TIRES;
-  choices[3].description = "Display Results"; choices[3].result = DISPLAY_SELECTED_RESULT;
-  choices[4].description = "Settings";        choices[4].result = CHANGE_SETTINGS;
+  int menuCount = 6;
+  choices[0].description = "Measure Temps";                   choices[0].result = MEASURE_TIRES;
+  choices[1].description = cars[selectedCar].carName.c_str(); choices[1].result = SELECT_CAR;
+  choices[2].description = "Display Temps";                   choices[2].result = DISPLAY_TIRES;
+  choices[3].description = "Instant Temp";                    choices[3].result = INSTANT_TEMP;
+  choices[4].description = "Display Results";                 choices[4].result = DISPLAY_SELECTED_RESULT;
+  choices[5].description = "Settings";                        choices[5].result = CHANGE_SETTINGS;
   
   deviceState =  MenuSelect(choices, menuCount, 6, MEASURE_TIRES, 19); 
 }
@@ -749,7 +754,54 @@ void MeasureTireTemps()
   #endif
   WriteResultsHTML();  
 }
-//
+///
+///
+///
+void InstantTemp()
+{
+  unsigned long priorTime = 0;
+  unsigned long curTime = millis();
+  char outStr[128];
+  float instant_temp = 0.0;
+  int textPosition[2] = {5, 0};
+  while(true)
+  {
+    curTime = millis();
+    if(curTime - priorTime > 1000)
+    {
+      priorTime = curTime;
+      // read temp, check for stable temp, light LED if stable
+      instant_temp = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
+Serial.print("Instant temp ");
+Serial.println(instant_temp);
+      // text string location
+      textPosition[0] = 5;
+      textPosition[1] = 0;
+      oledDisplay.erase();
+      oledDisplay.setFont(demoFonts[iFont]);  
+      oledDisplay.text(textPosition[0], textPosition[1], "Temperature");
+      textPosition[1] +=  2 * oledDisplay.getStringHeight("X");
+      sprintf(outStr, "%0.2f", instant_temp);
+      oledDisplay.setFont(demoFonts[1]);  
+      oledDisplay.text(textPosition[0], textPosition[1], outStr);
+      oledDisplay.display();
+    }
+    for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+    {
+      buttonReleased[btnIdx] = false;
+      buttonArray[btnIdx].process(curTime);
+    }
+    // any button released, exit
+    if ((buttonReleased[0]) || (buttonReleased[1]) || (buttonReleased[2]))
+    {
+      buttonReleased[0] = false;
+      buttonReleased[1] = false;
+      buttonReleased[2] = false;
+      break;
+    }
+  }
+}
+///
 ///
 ///
 void DisplayTireTemps(CarSettings currentResultCar)
