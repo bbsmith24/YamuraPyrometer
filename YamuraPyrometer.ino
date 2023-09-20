@@ -50,10 +50,10 @@
 // uncomment for RTC module attached
 #define HAS_RTC
 
-#define TEMPSTABLE_LED 4
 //#define BUTTON_1 12
 //#define BUTTON_2 27
 //#define BUTTON_3 33
+// moved for easier wire routing in package
 #define BUTTON_1 26
 #define BUTTON_2 12 //25
 #define BUTTON_3 25 //12
@@ -185,9 +185,6 @@ void setup()
   Serial.println();
   Serial.println("YamuraLog Recording Tire Pyrometer V1.0");
   #endif
-
-  pinMode(TEMPSTABLE_LED, OUTPUT);
-
   // register callback functions (shared, used by all buttons)
   // setup input buttons (debounced)
   for(int buttonIdx = 0; buttonIdx < BUTTON_COUNT; buttonIdx++)
@@ -209,10 +206,6 @@ void setup()
     #ifdef DEBUG_VERBOSE
     Serial.println("OLED begin failed. Freezing...");
     #endif
-    digitalWrite(TEMPSTABLE_LED, HIGH);
-    delay(200);
-    digitalWrite(TEMPSTABLE_LED, LOW);
-    delay(200);
   }
 
   iFont = 0;
@@ -579,7 +572,7 @@ void MeasureTireTemps()
   char outStr[512];
   tireIdx = 0;  // tire - RF, LF, RR, LR  
   int textPosition[2] = {5, 0};
-
+  int rectPosition[4] = {0, 0, 0, 0};
   // local measurement array, allow preserve measurements on cancel
   for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
   {
@@ -598,6 +591,7 @@ void MeasureTireTemps()
   #endif
   // text font
   iFont = 0;
+  bool armed = false;
   //
   while(tireIdx < cars[selectedCar].tireCount)
   {
@@ -607,7 +601,7 @@ void MeasureTireTemps()
       currentTemps[(tireIdx * cars[selectedCar].positionCount) + idx] = 0.0;
     }
     ResetTempStable();
-    digitalWrite(TEMPSTABLE_LED, LOW);
+    armed = false;
     unsigned long priorTime = millis();
     unsigned long curTime = millis();
     // text position on OLED screen
@@ -623,6 +617,16 @@ void MeasureTireTemps()
         buttonReleased[btnIdx] = false;
         buttonArray[btnIdx].process(curTime);
       }
+      if (buttonReleased[0])
+      {
+        #ifdef VERBOSE_DEBUG
+        Serial.print("Armed tire ");
+        Serial.print(tireIdx);
+        Serial.print(" position ");
+        Serial.println(measIdx);
+        #endif
+        armed = true;
+      }
       // cancel button released, return
       if (buttonReleased[1])
       {
@@ -633,9 +637,14 @@ void MeasureTireTemps()
       // if button released, go next position or next tire
       if(tempStable)
       {
-        digitalWrite(TEMPSTABLE_LED, HIGH);
-        if (buttonReleased[0])
+        if(armed)
         {
+          #ifdef VERBOSE_DEBUG
+          Serial.print("Save temp tire ");
+          Serial.print(tireIdx);
+          Serial.print(" position ");
+          Serial.println(measIdx);
+          #endif
           measIdx++;
           if(measIdx == cars[selectedCar].positionCount)
           {
@@ -644,13 +653,12 @@ void MeasureTireTemps()
           }
           currentTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 0;
           ResetTempStable();
-          digitalWrite(TEMPSTABLE_LED, LOW);
+          armed = false;
         }
       }
       else
       {
         buttonReleased[0] = false;
-        digitalWrite(TEMPSTABLE_LED, LOW);
       }
       // if not stablized. sample temp every .5 second, check for stable temp
       if(!tempStable && (curTime - priorTime) > 500)
@@ -658,8 +666,11 @@ void MeasureTireTemps()
         priorTime = curTime;
         curTime = millis();
         // read temp, check for stable temp, light LED if stable
-        currentTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
-        tempStable = CheckTempStable(currentTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx]);
+        if(armed)
+        {
+          currentTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
+          tempStable = CheckTempStable(currentTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx]);
+        }
         // text string location
         textPosition[0] = 5;
         textPosition[1] = 0;
@@ -682,7 +693,19 @@ void MeasureTireTemps()
             sprintf(outStr, "%s %s: -----",  cars[selectedCar].tireShortName[tireIdx].c_str(),  
                                              cars[selectedCar].positionShortName[tirePosIdx].c_str());
           }
-          oledDisplay.text(textPosition[0], textPosition[1], outStr);
+          if(tirePosIdx == measIdx)
+          {
+            rectPosition[0] = 0;
+            rectPosition[1] = textPosition[1];
+            rectPosition[2] = oledDisplay.getWidth();// - 2;
+            rectPosition[3] = oledDisplay.getStringHeight("X");// - 5;            
+            oledDisplay.rectangleFill(rectPosition[0], rectPosition[1], rectPosition[2], rectPosition[3], COLOR_WHITE);
+            oledDisplay.text(textPosition[0], textPosition[1], outStr, COLOR_BLACK);
+          }
+          else
+          {
+            oledDisplay.text(textPosition[0], textPosition[1], outStr, COLOR_WHITE);
+          }
           textPosition[1] +=  oledDisplay.getStringHeight(outStr);
         }
         oledDisplay.display();
@@ -690,7 +713,6 @@ void MeasureTireTemps()
     }
     tireIdx++;
   }
-  digitalWrite(TEMPSTABLE_LED, LOW);
   oledDisplay.erase();
   textPosition[1] = 0;
   oledDisplay.text(textPosition[0], textPosition[1], "Done");
