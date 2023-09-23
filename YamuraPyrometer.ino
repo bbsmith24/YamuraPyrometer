@@ -122,8 +122,6 @@ int nFONTS = sizeof(demoFonts) / sizeof(demoFonts[0]);
 #define FONT_5X7      3
 #define FONT_7SEGMENT 4
 
-int iFont = 0;
-
 unsigned long prior = 0;
 
 int tempIdx = 0;
@@ -208,8 +206,7 @@ void setup()
     #endif
   }
 
-  iFont = 0;
-  oledDisplay.setFont(demoFonts[iFont]);  
+  oledDisplay.setFont(demoFonts[1]);  
   oledDisplay.erase();
   oledDisplay.text(5, 0, "Yamura Electronics");
   oledDisplay.text(5, oledDisplay.getStringHeight("X"), "Recording Pyrometer");
@@ -562,7 +559,7 @@ void DisplayMenu()
   choices[4].description = "Display Results";                 choices[4].result = DISPLAY_SELECTED_RESULT;
   choices[5].description = "Settings";                        choices[5].result = CHANGE_SETTINGS;
   
-  deviceState =  MenuSelect(choices, menuCount, 6, MEASURE_TIRES, 19); 
+  deviceState =  MenuSelect(choices, menuCount, 4, MEASURE_TIRES, 19); 
 }
 //
 // 
@@ -589,8 +586,6 @@ void MeasureTireTemps()
                                                                        cars[selectedCar].positionCount);
   Serial.print(outStr);
   #endif
-  // text font
-  iFont = 0;
   bool armed = false;
   //
   while(tireIdx < cars[selectedCar].tireCount)
@@ -675,7 +670,7 @@ void MeasureTireTemps()
         textPosition[0] = 5;
         textPosition[1] = 0;
         oledDisplay.erase();
-        oledDisplay.setFont(demoFonts[iFont]);  
+        oledDisplay.setFont(demoFonts[1]);  
         sprintf(outStr, "%s", cars[selectedCar].tireLongName[tireIdx].c_str());
         oledDisplay.text(textPosition[0], textPosition[1], outStr);
         textPosition[1] +=  oledDisplay.getStringHeight(outStr);
@@ -794,13 +789,15 @@ void InstantTemp()
       priorTime = curTime;
       // read temp, check for stable temp, light LED if stable
       instant_temp = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
-Serial.print("Instant temp ");
-Serial.println(instant_temp);
+      #ifdef VERBOSE_DEBUG
+      Serial.print("Instant temp ");
+      Serial.println(instant_temp);
+      #endif
       // text string location
       textPosition[0] = 5;
       textPosition[1] = 0;
       oledDisplay.erase();
-      oledDisplay.setFont(demoFonts[iFont]);  
+      oledDisplay.setFont(demoFonts[1]);  
       oledDisplay.text(textPosition[0], textPosition[1], "Temperature");
       textPosition[1] +=  2 * oledDisplay.getStringHeight("X");
       sprintf(outStr, "%0.2f", instant_temp);
@@ -837,16 +834,16 @@ void DisplayTireTemps(CarSettings currentResultCar)
     for(int idxTire = 0; idxTire < currentResultCar.tireCount; idxTire++)
     {
       textPosition[1] = 0;
-      oledDisplay.setFont(demoFonts[iFont]);  
+      oledDisplay.setFont(demoFonts[1]);  
       oledDisplay.erase();
 	  // trim this to the max width of the display?
-      sprintf(outStr, currentResultCar.dateTime.c_str());
-      oledDisplay.text(textPosition[0], textPosition[1], outStr);
-      textPosition[1] +=  oledDisplay.getStringHeight(outStr);
+      //sprintf(outStr, currentResultCar.dateTime.c_str());
+      //oledDisplay.text(textPosition[0], textPosition[1], outStr);
+      //textPosition[1] +=  oledDisplay.getStringHeight(outStr);
       sprintf(outStr, "%s %s", currentResultCar.tireShortName[idxTire].c_str(), 
                                currentResultCar.carName.c_str());
       oledDisplay.text(textPosition[0], textPosition[1], outStr);
-      textPosition[1] +=  (2 * oledDisplay.getStringHeight(outStr));
+      textPosition[1] +=  oledDisplay.getStringHeight(outStr);
 
       for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
       {
@@ -911,7 +908,6 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
     }
   }
   String selIndicator = " ";
-  iFont = 0;
   int displayRange[2] = {0, linesToDisplay - 1 };
   displayRange[1] = (menuCount < linesToDisplay ? menuCount : linesToDisplay) - 1;
   for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
@@ -922,7 +918,7 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
   {
     textPosition[0] = 5;
     textPosition[1] = 0;
-    oledDisplay.setFont(demoFonts[iFont]);  
+    oledDisplay.setFont(demoFonts[1]);  
     oledDisplay.erase();
     //oledDisplay.text(textPosition[0], textPosition[1], "Select:");
     rectPosition[0] = 0;
@@ -1095,7 +1091,7 @@ void SelectCar()
     choices[idx].description = cars[idx].carName;
     choices[idx].result = idx; 
   }
-  selectedCar =  MenuSelect(choices, carCount, 6, 0, 19); 
+  selectedCar =  MenuSelect(choices, carCount, 4, 0, 19); 
   #ifdef DEBUG_VERBOSE
   Serial.print("Selected car from SelectCar() ") ;
   Serial.print(selectedCar) ;
@@ -1120,7 +1116,7 @@ void ChangeSettings()
     sprintf(buf, "Pass %s", pass);
     choices[4].description = buf;             choices[4].result = 4;
     choices[5].description = "Exit";          choices[5].result = 3;
-    result =  MenuSelect(choices, menuCount, 6, 0, 19); 
+    result =  MenuSelect(choices, menuCount, 4, 0, 19); 
     switch(result)
     {
       case 0:
@@ -1145,7 +1141,7 @@ void SetUnits()
   int menuCount = 2;
   choices[0].description = "Temp in F";   choices[0].result = 0;
   choices[1].description = "Temp in C";   choices[1].result = 1;
-  int menuResult =  MenuSelect(choices, menuCount, 6, 0, 19); 
+  int menuResult =  MenuSelect(choices, menuCount, 4, 0, 19); 
   // true for C, false for F
   tempUnits = menuResult == 1;
 }
@@ -1174,8 +1170,7 @@ void SetDateTime()
   timeVals[4] = rtc.getHours();
   timeVals[5] = rtc.getMinutes();
   isPM = rtc.isPM();
-  iFont = 0;
-
+  
   for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
   {
     buttonReleased[btnIdx] = false;
@@ -1185,7 +1180,7 @@ void SetDateTime()
     textPosition[0] = 5;
     textPosition[1] = 0;
     oledDisplay.erase();
-    oledDisplay.setFont(demoFonts[iFont]);  
+    oledDisplay.setFont(demoFonts[1]);  
     oledDisplay.text(textPosition[0], textPosition[1], "Set date/time");
     
     textPosition[1] += oledDisplay.getStringHeight("X");
@@ -1377,7 +1372,7 @@ void DeleteDataFile()
   int menuCount = 2;
   choices[0].description = "Yes";      choices[0].result = 1;
   choices[1].description = "No";   choices[1].result = 0;
-  int menuResult = MenuSelect (choices, menuCount, 6, 1, 19); 
+  int menuResult = MenuSelect (choices, menuCount, 4, 1, 19); 
   if(menuResult == 1)
   {
     DeleteFile(SD, "/py_temps.txt");
@@ -1683,7 +1678,7 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     choices[menuCnt].description = buf;      choices[menuCnt].result = menuCnt;
     menuCnt++;
   }
-  int menuResult = MenuSelect(choices, menuCnt, 6, 0, 19);
+  int menuResult = MenuSelect(choices, menuCnt, 4, 0, 19);
   file.close();
   // at this point, we need to parse the selected line and add to a measurment structure for display
   // get to the correct line
