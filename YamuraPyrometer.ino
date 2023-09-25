@@ -764,8 +764,16 @@ void MeasureTireTemps()
   Serial.println(fileLine);
   Serial.println("Add to results file...");
   #endif
-  AppendFile(SD, "/py_temps.txt", fileLine.c_str());
-  // update the results HTML file
+  
+  sprintf(outStr, "/py_temps_%d.txt", selectedCar);
+  
+  #ifdef DEBUG_VERBOSE
+  Serial.print("Write results to: ");
+  Serial.println(outStr);
+  #endif
+
+  AppendFile(SD, outStr/*"/py_temps.txt"*/, fileLine.c_str());
+  // update the HTML file
   #ifdef DEBUG_VERBOSE
   Serial.println("Update HTML file...");
   #endif
@@ -1378,10 +1386,30 @@ void DeleteDataFile()
     #ifdef DEBUG_HTML
     Serial.println("Delete data and html files");
     #endif
-    DeleteFile(SD, "/py_temps.txt");
+    int dataIdx = 0;
+    char nameBuf[128];
+    for(int dataIdx = 0; dataIdx < 100; dataIdx++)
+    {
+      sprintf(nameBuf, "/py_temps_%d.txt", dataIdx);
+      if(!SD.exists(nameBuf))
+      {
+        #ifdef DEBUG_VERBOSE
+        Serial.print(nameBuf);
+        Serial.println(" does not exist");
+        #endif
+        continue;
+      }
+      #ifdef DEBUG_VERBOSE
+      Serial.print(nameBuf);
+      Serial.println(" deleted");
+      #endif
+      DeleteFile(SD, nameBuf);
+    }
     DeleteFile(SD, "/py_res.html");
     // create the HTML header
+    #ifdef DEBUG_VERBOSE
     Serial.println("Write empty html");
+    #endif
     WriteResultsHTML();
   }
 }
@@ -1735,20 +1763,16 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
 //
 void WriteResultsHTML()
 {
+  char nameBuf[128];
   htmlStr = "";
   CarSettings currentResultCar;
-  File fileIn = SD.open("/py_temps.txt", FILE_READ);
-  if(!fileIn)
-  {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("Failed to open files for TXT file for reading");
-    #endif
-    //return;
-  }
+  File fileIn;
   // create a new HTML file
   if(!SD.remove("/py_res.html"))
   {
+    #ifdef DEBUG_VERBOSE
     Serial.print("failed to delete /py_res.html");
+    #endif
   }
   AppendFile(SD, "/py_res.html", "<!DOCTYPE html>");
   AppendFile(SD, "/py_res.html", "<html>");
@@ -1765,90 +1789,129 @@ void WriteResultsHTML()
   float tireMin =  999.9;
   float tireMax = -999.9;
   int rowCount = 0;
-  while(true)
+  for (int dataFileCount = 0; dataFileCount < 100; dataFileCount++)
   {
-    ReadLine(fileIn, buf);
-    // end of file
-    if(strlen(buf) == 0)
+    sprintf(nameBuf, "/py_temps_%d.txt", dataFileCount);
+    fileIn = SD.open(nameBuf, FILE_READ);
+    if(!fileIn)
     {
-      break;
-    }
-    ParseResult(buf, currentResultCar);
-    #ifdef DEBUG_VERBOSE
-    Serial.println("begin new row");
-    #endif
-    rowCount++;
-    AppendFile(SD, "/py_res.html", "		    <tr>");
-    sprintf(buf, "<td>%s</td>", currentResultCar.dateTime.c_str());
-    AppendFile(SD, "/py_res.html", buf);
-    #ifdef DEBUG_VERBOSE
-    Serial.print("date time ");
-    Serial.println(buf);
-    #endif
-    sprintf(buf, "<td>%s</td>", currentResultCar.carName.c_str());
-    AppendFile(SD, "/py_res.html", buf);
-    #ifdef DEBUG_VERBOSE
-    Serial.print("car ");
-    Serial.println(buf);
-    #endif
-    for(int t_idx = 0; t_idx < currentResultCar.tireCount; t_idx++)
-    {
-      tireMin =  999.9;
-      tireMax = -999.9;
-      sprintf(buf, "<td>%s</td>", currentResultCar.tireShortName[t_idx].c_str());
       #ifdef DEBUG_VERBOSE
-      Serial.print("tire ");
+      Serial.print(nameBuf);
+      Serial.println(" failed to open for reading");
+      #endif
+      continue;
+    }
+    Serial.print(nameBuf);
+    Serial.println(" opened for reading");
+    bool outputSubHeader = true;
+    while(true)
+    {
+      ReadLine(fileIn, buf);
+      // end of file
+      if(strlen(buf) == 0)
+      {
+        break;
+      }
+      ParseResult(buf, currentResultCar);
+      if(outputSubHeader)
+      {
+        AppendFile(SD, "/py_res.html", "        <tr>");
+        AppendFile(SD, "/py_res.html", "            <td></td>");
+        AppendFile(SD, "/py_res.html", "            <td></td>");
+        for(int t_idx = 0; t_idx < currentResultCar.tireCount; t_idx++)
+        {
+          for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
+          {
+            sprintf(buf, "<td>%s-%s</td>", currentResultCar.tireShortName[t_idx].c_str(), currentResultCar.positionShortName[p_idx].c_str());
+            #ifdef DEBUG_HTML
+            Serial.println(buf);
+            #endif
+            AppendFile(SD, "/py_res.html", buf);
+          }
+        }
+        AppendFile(SD, "/py_res.html", "        </tr>");
+      }
+      outputSubHeader = false;
+      #ifdef DEBUG_VERBOSE
+      Serial.println("begin new row");
+      #endif
+      rowCount++;
+      AppendFile(SD, "/py_res.html", "		    <tr>");
+      sprintf(buf, "<td>%s</td>", currentResultCar.dateTime.c_str());
+      AppendFile(SD, "/py_res.html", buf);
+      #ifdef DEBUG_VERBOSE
+      Serial.print("date time ");
       Serial.println(buf);
       #endif
+      sprintf(buf, "<td>%s</td>", currentResultCar.carName.c_str());
       AppendFile(SD, "/py_res.html", buf);
-      // get min/max temps
-      for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
-      {
-        tireMin = tireMin < tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] ? tireMin : tireTemps[(t_idx * currentResultCar.positionCount) + p_idx];
-        tireMax = tireMax > tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] ? tireMax : tireTemps[(t_idx * currentResultCar.positionCount) + p_idx];
-      }
       #ifdef DEBUG_VERBOSE
-      Serial.print("tire temp range ");
-      Serial.print(tireMin);
-      Serial.print(" - ");
-      Serial.println(tireMax);
-      Serial.print(" overheat ");
-      Serial.println(currentResultCar.maxTemp[t_idx]);
+      Serial.print("car ");
+      Serial.println(buf);
       #endif
-      // add cells to file
-      for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
+      for(int t_idx = 0; t_idx < currentResultCar.tireCount; t_idx++)
       {
-        if(tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] >= currentResultCar.maxTemp[t_idx])
-        {
-          sprintf(buf, "<td bgcolor=\"red\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
-        }
-        else if(tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] <= tireMin)
-        {
-          sprintf(buf, "<td bgcolor=\"cyan\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
-        }
-        else if (tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] == tireMax)
-        {
-          sprintf(buf, "<td bgcolor=\"yellow\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
-        }
-        else
-        {
-          sprintf(buf, "<td>%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
-        }
+        tireMin =  999.9;
+        tireMax = -999.9;
+        //sprintf(buf, "<td>%s</td>", currentResultCar.tireShortName[t_idx].c_str());
         #ifdef DEBUG_VERBOSE
         Serial.print("tire ");
-        Serial.print(t_idx);
-        Serial.print("position ");
-        Serial.print(p_idx);
-        Serial.print(" ");
         Serial.println(buf);
         #endif
-        AppendFile(SD, "/py_res.html", buf);
+        //AppendFile(SD, "/py_res.html", buf);
+        // get min/max temps
+        for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
+        {
+          tireMin = tireMin < tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] ? tireMin : tireTemps[(t_idx * currentResultCar.positionCount) + p_idx];
+          tireMax = tireMax > tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] ? tireMax : tireTemps[(t_idx * currentResultCar.positionCount) + p_idx];
+        }
+        #ifdef DEBUG_VERBOSE
+        Serial.print("tire temp range ");
+        Serial.print(tireMin);
+        Serial.print(" - ");
+        Serial.println(tireMax);
+        Serial.print(" overheat ");
+        Serial.println(currentResultCar.maxTemp[t_idx]);
+        #endif
+        // add cells to file
+        for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
+        {
+          if(tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] >= currentResultCar.maxTemp[t_idx])
+          {
+            //sprintf(buf, "<td bgcolor=\"red\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+            sprintf(buf, "<td bgcolor=\"red\">%0.2f</td>", /*currentResultCar.positionShortName[p_idx].c_str(),*/ tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+          }
+          else if(tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] <= tireMin)
+          {
+            //sprintf(buf, "<td bgcolor=\"cyan\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+            sprintf(buf, "<td bgcolor=\"cyan\">%0.2f</td>", /*currentResultCar.positionShortName[p_idx].c_str(),*/ tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+          }
+          else if (tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] == tireMax)
+          {
+            //sprintf(buf, "<td bgcolor=\"yellow\">%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+            sprintf(buf, "<td bgcolor=\"yellow\">%0.2f</td>", /*currentResultCar.positionShortName[p_idx].c_str(),*/ tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+          }
+          else
+          {
+            //sprintf(buf, "<td>%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+            sprintf(buf, "<td>%0.2f</td>", /*currentResultCar.positionShortName[p_idx].c_str(),*/ tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+          }
+          #ifdef DEBUG_VERBOSE
+          Serial.print("tire ");
+          Serial.print(t_idx);
+          Serial.print("position ");
+          Serial.print(p_idx);
+          Serial.print(" ");
+          Serial.println(buf);
+          #endif
+          AppendFile(SD, "/py_res.html", buf);
+        }
       }
+      #ifdef DEBUG_VERBOSE
+      Serial.println("end of row");
+      #endif
+      AppendFile(SD, "/py_res.html", "		    </tr>");
     }
-    #ifdef DEBUG_VERBOSE
-    Serial.println("end of row");
-    #endif
-    AppendFile(SD, "/py_res.html", "		    </tr>");
   }
   if(rowCount == 0)
   {
