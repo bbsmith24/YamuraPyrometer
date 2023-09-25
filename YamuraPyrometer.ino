@@ -46,7 +46,7 @@
 
 // uncomment for debug to serial monitor
 //#define DEBUG_VERBOSE
-#define XDEBUG_VERBOSE
+//#define DEBUG_HTML
 // uncomment for RTC module attached
 #define HAS_RTC
 
@@ -1375,7 +1375,14 @@ void DeleteDataFile()
   int menuResult = MenuSelect (choices, menuCount, 4, 1, 19); 
   if(menuResult == 1)
   {
+    #ifdef DEBUG_HTML
+    Serial.println("Delete data and html files");
+    #endif
     DeleteFile(SD, "/py_temps.txt");
+    DeleteFile(SD, "/py_res.html");
+    // create the HTML header
+    Serial.println("Write empty html");
+    WriteResultsHTML();
   }
 }
 //
@@ -1736,7 +1743,7 @@ void WriteResultsHTML()
     #ifdef DEBUG_VERBOSE
     Serial.println("Failed to open files for TXT file for reading");
     #endif
-    return;
+    //return;
   }
   // create a new HTML file
   if(!SD.remove("/py_res.html"))
@@ -1757,6 +1764,7 @@ void WriteResultsHTML()
   AppendFile(SD, "/py_res.html", "        </tr>");
   float tireMin =  999.9;
   float tireMax = -999.9;
+  int rowCount = 0;
   while(true)
   {
     ReadLine(fileIn, buf);
@@ -1766,6 +1774,10 @@ void WriteResultsHTML()
       break;
     }
     ParseResult(buf, currentResultCar);
+    #ifdef DEBUG_VERBOSE
+    Serial.println("begin new row");
+    #endif
+    rowCount++;
     AppendFile(SD, "/py_res.html", "		    <tr>");
     sprintf(buf, "<td>%s</td>", currentResultCar.dateTime.c_str());
     AppendFile(SD, "/py_res.html", buf);
@@ -1830,6 +1842,47 @@ void WriteResultsHTML()
         Serial.print(" ");
         Serial.println(buf);
         #endif
+        AppendFile(SD, "/py_res.html", buf);
+      }
+    }
+    #ifdef DEBUG_VERBOSE
+    Serial.println("end of row");
+    #endif
+    AppendFile(SD, "/py_res.html", "		    </tr>");
+  }
+  if(rowCount == 0)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("empty data file - begin blank row");
+    #endif
+    rowCount++;
+    AppendFile(SD, "/py_res.html", "		    <tr>");
+    sprintf(buf, "<td>---</td>");
+    AppendFile(SD, "/py_res.html", buf);
+    #ifdef DEBUG_VERBOSE
+    Serial.print("date time ");
+    Serial.println(buf);
+    #endif
+    sprintf(buf, "<td>---</td>");
+    AppendFile(SD, "/py_res.html", buf);
+    #ifdef DEBUG_VERBOSE
+    Serial.print("car ");
+    Serial.println(buf);
+    #endif
+    for(int t_idx = 0; t_idx < 4; t_idx++)
+    {
+      tireMin =  999.9;
+      tireMax = -999.9;
+      sprintf(buf, "<td>---</td>");
+      #ifdef DEBUG_VERBOSE
+      Serial.print("tire ");
+      Serial.println(buf);
+      #endif
+      AppendFile(SD, "/py_res.html", buf);
+      // add cells to file
+      for(int p_idx = 0; p_idx < 3; p_idx++)
+      {
+        sprintf(buf, "<td>---</td>");
         AppendFile(SD, "/py_res.html", buf);
       }
     }
@@ -2052,6 +2105,10 @@ void AppendFile(fs::FS &fs, const char * path, const char * message)
     #ifdef DEBUG_VERBOSE
     Serial.println("Message appended");
     #endif
+    #ifdef DEBUG_HTML
+    Serial.print("Message appended ");
+    Serial.println(message);
+    #endif 
   }
   else 
   {
