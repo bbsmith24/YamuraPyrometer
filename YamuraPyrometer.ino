@@ -385,12 +385,12 @@ void setup()
     }
     //Use the time from the Arduino compiler (build time) to set the RTC
     //Keep in mind that Arduino does not get the new compiler time every time it compiles. to ensure the proper time is loaded, open up a fresh version of the IDE and load the sketch.
-    if (rtc.setToCompilerTime() == false) 
-    {
-      #ifdef DEBUG_VERBOSE
-      Serial.println("RTC failed to set time");
-      #endif
-    }
+    //if (rtc.setToCompilerTime() == false) 
+    //{
+    //  #ifdef DEBUG_VERBOSE
+    //  Serial.println("RTC failed to set time");
+    //  #endif
+    //}
     #ifdef DEBUG_VERBOSE
     Serial.println("RTC online!");
     #endif
@@ -1159,7 +1159,7 @@ void SetUnits()
 void SetDateTime()
 {
   char outStr[256];
-  int timeVals[6] = {0, 0, 0, 0, 0, 0};  // date, month, year, day, hour, min
+  int timeVals[8] = {0, 0, 0, 0, 0, 0, 0, 0};  // date, month, year, day, hour, min, sec, 100ths
   bool isPM = false;
   int textPosition[2] = {0, 0};
   int setIdx = 0;
@@ -1173,7 +1173,7 @@ void SetDateTime()
   }
   timeVals[0] = rtc.getDate();
   timeVals[1] = rtc.getMonth();
-  timeVals[2] = rtc.getYear();
+  timeVals[2] = rtc.getYear() + 2000;
   timeVals[3] = rtc.getWeekday();
   timeVals[4] = rtc.getHours();
   timeVals[5] = rtc.getMinutes();
@@ -1193,29 +1193,29 @@ void SetDateTime()
     
     textPosition[1] += oledDisplay.getStringHeight("X");
 
-    sprintf(outStr, "%02d/%02d/%02d ", timeVals[0], timeVals[1], timeVals[2]);
+    sprintf(outStr, "%02d/%02d/%04d ", timeVals[0], timeVals[1], timeVals[2]);
     switch(timeVals[3])
     {
-      case 0:
-        strcat(outStr, "Su");
-        break;
-      case 1:
+      case 2:
         strcat(outStr, "M");
         break;
-      case 2:
+      case 3:
         strcat(outStr, "Tu");
         break;
-      case 3:
+      case 4:
         strcat(outStr, "W");
         break;
-      case 4:
+      case 5:
         strcat(outStr, "Th");
         break;
-      case 5:
+      case 6:
         strcat(outStr, "F");
         break;
-      case 6:
+      case 0:
         strcat(outStr, "Sa");
+        break;
+      case 1:
+        strcat(outStr, "Su");
         break;
       default:
         strcat(outStr, "--");
@@ -1225,7 +1225,7 @@ void SetDateTime()
     if(setIdx < 4)
     {
       textPosition[1] += oledDisplay.getStringHeight(outStr);;
-      sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "--" : "  "), (setIdx == 1 ? "--" : "  "), (setIdx == 2 ? "--" : "  "), (setIdx == 3 ? "--" : "  "));
+      sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "--" : "  "), (setIdx == 1 ? "--" : "  "), (setIdx == 2 ? "----" : "    "), (setIdx == 3 ? "--" : "  "));
       oledDisplay.text(textPosition[0], textPosition[1], outStr);
     }
     textPosition[1] += oledDisplay.getStringHeight(outStr);;
@@ -1298,15 +1298,15 @@ void SetDateTime()
           }
           break;
         case 2:  // year
+          if(timeVals[2] < 2020)
+          {
+            timeVals[2] = 2020;
+          }
+          if(timeVals[2] > 2100)
+          {
+            timeVals[2] = 2020;
+          }
           timeVals[2] += delta;
-          if(timeVals[2] < 0)
-          {
-            timeVals[2] = 99;
-          }
-          if(timeVals[2] > 99)
-          {
-            timeVals[2] = 0;
-          }
           break;
         case 3:  // day
           timeVals[3] += delta;
@@ -1363,12 +1363,12 @@ void SetDateTime()
       timeVals[4] += 12;
     }
   }
-  //              hund, sec, min,         hour,        date         month,       year,        day
-  if(!rtc.setTime(0,    0,   timeVals[5], timeVals[4], timeVals[0], timeVals[1], timeVals[2], timeVals[3]))
+  //              hund,        sec,          min,         hour,        date         month,       year,        day
+  if(!rtc.setTime(timeVals[6], timeVals[7],  timeVals[5], timeVals[4], timeVals[0], timeVals[1], timeVals[2], timeVals[3]))
   {
-    #ifdef DEBUG_VERBOSE
+    //#ifdef DEBUG_VERBOSE
     Serial.println("Set time failed");
-    #endif
+    //#endif
   }
   rtc.set12Hour();
 }
