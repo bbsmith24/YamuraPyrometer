@@ -88,7 +88,7 @@ struct CarSettings
     float* maxTemp;
 };
 CarSettings* cars;
-// dynamic tire temp array
+// tire temp array
 float tireTemps[60];
 float currentTemps[60];
 
