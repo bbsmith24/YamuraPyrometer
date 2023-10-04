@@ -1,5 +1,6 @@
 /*
   YamuraLog Recording Tire Pyrometer
+  SparkFun_Qwiic_OLED library version for small OLED display
   By: Brian Smith
   Yamura Electronics Division
   Date: September 2023
@@ -48,7 +49,11 @@
 //#define DEBUG_VERBOSE
 //#define DEBUG_HTML
 // uncomment for RTC module attached
-#define HAS_RTC
+//#define HAS_RTC
+// uncomment for thermocouple module attached
+#define HAS_THERMO
+// uncomment to write INI file
+#define WRITE_INI
 
 //#define BUTTON_1 12
 //#define BUTTON_2 27
@@ -88,7 +93,7 @@ struct CarSettings
     float* maxTemp;
 };
 CarSettings* cars;
-// dynamic tire temp array
+// tire temp array
 float tireTemps[60];
 float currentTemps[60];
 
@@ -167,7 +172,7 @@ void SetDateTime();
 void SetUnits();
 void ChangeSettings();
 void SelectCar();
-int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect, int maxWidth);
+int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect);
 void DisplayTireTemps(CarSettings currentResultCar);
 void MeasureTireTemps();
 void DisplayMenu();
@@ -179,6 +184,7 @@ void setup()
 {
   Serial.begin(115200);
   #ifdef DEBUG_VERBOSE
+  delay(1000);
   Serial.println();
   Serial.println();
   Serial.println("YamuraLog Recording Tire Pyrometer V1.0");
@@ -187,6 +193,12 @@ void setup()
   // setup input buttons (debounced)
   for(int buttonIdx = 0; buttonIdx < BUTTON_COUNT; buttonIdx++)
   {
+    #ifdef DEBUG_VERBOSE
+    Serial.print("Set up button ");
+    Serial.print(buttonIdx + 1);
+    Serial.print(" pin ");
+    Serial.println(buttonPin[buttonIdx]);
+    #endif
     buttonArray[buttonIdx].registerCallbacks(button_pressedCallback, 
                                              button_releasedCallback, 
                                              button_pressedDurationCallback, 
@@ -196,14 +208,18 @@ void setup()
                                  InputDebounce::PIM_INT_PULL_UP_RES);
   }
 
-
-  Wire.begin();             // start I2C
+  // start I2C
+  #ifdef DEBUG_VERBOSE
+  Serial.println("Start I2C");
+  #endif
+  Wire.begin();
   // Initalize the OLED device and related graphics system
-  while (!oledDisplay.begin(Wire, 0x3C))
+  if (!oledDisplay.begin(Wire, 0x3C))
   {
     #ifdef DEBUG_VERBOSE
     Serial.println("OLED begin failed. Freezing...");
     #endif
+    while(true);
   }
 
   oledDisplay.setFont(demoFonts[1]);  
@@ -211,7 +227,7 @@ void setup()
   oledDisplay.text(5, 0, "Yamura Electronics");
   oledDisplay.text(5, oledDisplay.getStringHeight("X"), "Recording Pyrometer");
   oledDisplay.display();
-  delay(10000);
+  delay(5000);
   #ifdef DEBUG_VERBOSE
   Serial.print("OLED screen size ");
   Serial.print(oledDisplay.getWidth());
@@ -227,15 +243,21 @@ void setup()
     #ifdef DEBUG_VERBOSE
     Serial.println("Thermocouple Device acknowledged!");
     #endif
+    oledDisplay.erase();
+    oledDisplay.text(5, 0, "Thermocouple OK");
+    oledDisplay.display();
+    delay(1000);
   }
   else 
   {
     #ifdef DEBUG_VERBOSE
     Serial.println("Thermocouple did not acknowledge! Freezing.");
     #endif
-    while(1); //hang forever
+    oledDisplay.erase();
+    oledDisplay.text(5, 0, "Thermocouple FAIL");
+    oledDisplay.display();
+    while(true); //hang forever
   }
-
   //check if the Device ID is correct
   if(tempSensor.checkDeviceID())
   {
@@ -382,7 +404,13 @@ void setup()
       #ifdef DEBUG_VERBOSE
       Serial.println("RTC not initialized, check wiring");
       #endif
+      oledDisplay.text(5, oledDisplay.getStringHeight("X"), "RTC FAIL");
+      oledDisplay.display();
+      while(true);
     }
+    oledDisplay.text(5, oledDisplay.getStringHeight("X"), "RTC OK");
+    oledDisplay.display();
+    delay(1000);
     //Use the time from the Arduino compiler (build time) to set the RTC
     //Keep in mind that Arduino does not get the new compiler time every time it compiles. to ensure the proper time is loaded, open up a fresh version of the IDE and load the sketch.
     //if (rtc.setToCompilerTime() == false) 
@@ -394,6 +422,10 @@ void setup()
     #ifdef DEBUG_VERBOSE
     Serial.println("RTC online!");
     #endif
+  #else
+  oledDisplay.text(5, oledDisplay.getStringHeight("X"), "RTC not present");
+  oledDisplay.display();
+  delay(1000);
   #endif
 
   Serial.println();
@@ -403,8 +435,12 @@ void setup()
     #ifdef DEBUG_VERBOSE
     Serial.println("Card Mount Failed");
     #endif
-    return;
+    oledDisplay.text(5, oledDisplay.getStringHeight("X") * 2, "microSD OK");
+    oledDisplay.display();
+    while(true);
   }
+  oledDisplay.text(5, oledDisplay.getStringHeight("X") * 2, "microSD OK");
+  oledDisplay.display();
   uint8_t cardType = SD.cardType();
   if(cardType == CARD_NONE)
   {
@@ -441,14 +477,15 @@ void setup()
     #endif
   }
   uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-
   #ifdef DEBUG_VERBOSE
   Serial.printf("SD Card Size: %lluMB\n", cardSize);
   #endif
   // uncomment to write a default setup file
   // maybe check for setup and write one if needed?
-  //DeleteFile(SD, "/py_setup.txt");
-  //WriteSetupFile(SD, "/py_setup.txt");
+  #ifdef WRITE_INI
+  DeleteFile(SD, "/py_setup.txt");
+  WriteSetupFile(SD, "/py_setup.txt");
+  #endif
   ReadSetupFile(SD,  "/py_setup.txt");
 
   ResetTempStable();
@@ -478,7 +515,7 @@ void setup()
   WriteResultsHTML();
   WiFi.softAP(ssid, pass);
   IP = WiFi.softAPIP();
-  #ifdef VERBOSE_DEBUG
+  #ifdef DEBUG_VERBOSE
   Serial.print("AP IP address: ");
   Serial.println(IP);
   Serial.print(ssid);
@@ -531,7 +568,9 @@ void loop()
       deviceState = DISPLAY_MENU;
       break;
     case DISPLAY_SELECTED_RESULT:
-      DisplaySelectedResults(SD, "/py_temps.txt");
+      char outStr[128];
+      sprintf(outStr, "/py_temps_%d.txt", selectedCar);
+      DisplaySelectedResults(SD, outStr);
       deviceState = DISPLAY_MENU;
       break;
     case CHANGE_SETTINGS:
@@ -559,7 +598,7 @@ void DisplayMenu()
   choices[4].description = "Display Results";                 choices[4].result = DISPLAY_SELECTED_RESULT;
   choices[5].description = "Settings";                        choices[5].result = CHANGE_SETTINGS;
   
-  deviceState =  MenuSelect(choices, menuCount, 4, MEASURE_TIRES, 19); 
+  deviceState =  MenuSelect(choices, menuCount, 4, MEASURE_TIRES); 
 }
 //
 // 
@@ -614,7 +653,7 @@ void MeasureTireTemps()
       }
       if (buttonReleased[0])
       {
-        #ifdef VERBOSE_DEBUG
+        #ifdef DEBUG_VERBOSE
         Serial.print("Armed tire ");
         Serial.print(tireIdx);
         Serial.print(" position ");
@@ -634,7 +673,7 @@ void MeasureTireTemps()
       {
         if(armed)
         {
-          #ifdef VERBOSE_DEBUG
+          #ifdef DEBUG_VERBOSE
           Serial.print("Save temp tire ");
           Serial.print(tireIdx);
           Serial.print(" position ");
@@ -663,7 +702,11 @@ void MeasureTireTemps()
         // read temp, check for stable temp, light LED if stable
         if(armed)
         {
+          #ifdef HAS_THERMO
           currentTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
+          #else
+          currentTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 100;
+          #endif
           tempStable = CheckTempStable(currentTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx]);
         }
         // text string location
@@ -692,8 +735,8 @@ void MeasureTireTemps()
           {
             rectPosition[0] = 0;
             rectPosition[1] = textPosition[1];
-            rectPosition[2] = oledDisplay.getWidth();// - 2;
-            rectPosition[3] = oledDisplay.getStringHeight("X");// - 5;            
+            rectPosition[2] = oledDisplay.getWidth();
+            rectPosition[3] = oledDisplay.getStringHeight("X");
             oledDisplay.rectangleFill(rectPosition[0], rectPosition[1], rectPosition[2], rectPosition[3], COLOR_WHITE);
             oledDisplay.text(textPosition[0], textPosition[1], outStr, COLOR_BLACK);
           }
@@ -772,7 +815,7 @@ void MeasureTireTemps()
   Serial.println(outStr);
   #endif
 
-  AppendFile(SD, outStr/*"/py_temps.txt"*/, fileLine.c_str());
+  AppendFile(SD, outStr, fileLine.c_str());
   // update the HTML file
   #ifdef DEBUG_VERBOSE
   Serial.println("Update HTML file...");
@@ -789,15 +832,20 @@ void InstantTemp()
   char outStr[128];
   float instant_temp = 0.0;
   int textPosition[2] = {5, 0};
+  randomSeed(100);
   while(true)
   {
     curTime = millis();
     if(curTime - priorTime > 1000)
     {
       priorTime = curTime;
-      // read temp, check for stable temp, light LED if stable
+      // read temp
+      #ifdef HAS_THERMO
       instant_temp = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
-      #ifdef VERBOSE_DEBUG
+      #else
+      instant_temp = 100.0F;
+      #endif
+      #ifdef DEBUG_VERBOSE
       Serial.print("Instant temp ");
       Serial.println(instant_temp);
       #endif
@@ -836,18 +884,22 @@ void DisplayTireTemps(CarSettings currentResultCar)
   unsigned long curTime = millis();
   unsigned long priorTime = millis();
   int textPosition[2] = {5, 0};
+  int rectPosition[4] = {0, 0, 0, 0};
   char outStr[255];
+  char padStr[3];
+  float maxTemp = 0.0F;
   while(true)
   {
     for(int idxTire = 0; idxTire < currentResultCar.tireCount; idxTire++)
     {
+      maxTemp = 0.0F;
+      for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
+      {
+        maxTemp = tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] > maxTemp ? tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] : maxTemp;
+      }    
       textPosition[1] = 0;
       oledDisplay.setFont(demoFonts[1]);  
       oledDisplay.erase();
-	  // trim this to the max width of the display?
-      //sprintf(outStr, currentResultCar.dateTime.c_str());
-      //oledDisplay.text(textPosition[0], textPosition[1], outStr);
-      //textPosition[1] +=  oledDisplay.getStringHeight(outStr);
       sprintf(outStr, "%s %s", currentResultCar.tireShortName[idxTire].c_str(), 
                                currentResultCar.carName.c_str());
       oledDisplay.text(textPosition[0], textPosition[1], outStr);
@@ -855,9 +907,35 @@ void DisplayTireTemps(CarSettings currentResultCar)
 
       for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
       {
-        sprintf(outStr, "%s: %3.1F", currentResultCar.positionLongName[tirePosIdx].c_str(), 
-                                     tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx]);
-        oledDisplay.text(textPosition[0], textPosition[1], outStr);
+        if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= 100.0F)
+        {
+          padStr[0] = '\0';
+        }
+        else if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= 10.0F)
+        {
+          sprintf(padStr, " ");
+        }
+        else
+        {
+          sprintf(padStr, "  ");
+        }
+        sprintf(outStr, "%s: %s%3.1F %s", currentResultCar.positionShortName[tirePosIdx].c_str(), 
+                                       padStr,
+                                       tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx],
+                                       tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= currentResultCar.maxTemp[idxTire] ? "*****" : " ");
+        if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == maxTemp)
+        {
+            rectPosition[0] = 0;
+            rectPosition[1] = textPosition[1];
+            rectPosition[2] = oledDisplay.getWidth();
+            rectPosition[3] = oledDisplay.getStringHeight("X");
+            oledDisplay.rectangleFill(rectPosition[0], rectPosition[1], rectPosition[2], rectPosition[3], COLOR_WHITE);
+            oledDisplay.text(textPosition[0], textPosition[1], outStr, COLOR_BLACK);
+        }
+        else
+        {
+          oledDisplay.text(textPosition[0], textPosition[1], outStr, COLOR_WHITE);
+        }
         textPosition[1] +=  oledDisplay.getStringHeight(outStr);
       }
       oledDisplay.display();
@@ -892,20 +970,19 @@ void DisplayTireTemps(CarSettings currentResultCar)
 //
 //
 //
-int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect, int maxWidth)
+int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect)
 {
   char outStr[256];
   int textPosition[2] = {5, 0};
   int rectPosition[4] = {0, 0, 0, 0};
-  int charWidth = 0;
   unsigned long curTime = millis();
   int selection = initialSelect;
-  #ifdef VERBOSE_DEBUG
+  #ifdef DEBUG_VERBOSE
   Serial.println("MenuSelect  choices");
   #endif
   for(int selIdx = 0; selIdx < menuCount; selIdx++)
   {
-    #ifdef VERBOSE_DEBUG
+    #ifdef DEBUG_VERBOSE
     Serial.print(choices[selIdx].description);
     Serial.print(" - ");
     Serial.println(choices[selIdx].result);
@@ -932,21 +1009,10 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
     rectPosition[0] = 0;
     rectPosition[2] = oledDisplay.getWidth() - 2;
     rectPosition[3] = oledDisplay.getStringHeight("X") - 5;
-    charWidth = oledDisplay.getStringWidth("X");
-    #ifdef VERBOSE_DEBUG
-    Serial.print("Character width ");
-    Serial.print(charWidth);
-    Serial.print(" passed in max characters per line ");
-    Serial.print(maxWidth);
-    #endif
-    maxWidth = (oledDisplay.getWidth() / charWidth) - 3;
-    #ifdef VERBOSE_DEBUG
-    Serial.print(" calculated max characters per line ");
-    Serial.println(maxWidth);
-    Serial.print("Choice index 0");
-    Serial.print(" ");
+    #ifdef DEBUG_VERBOSE
+    Serial.print("Choice count ");
     Serial.println(menuCount);
-    Serial.print("Choice range ");
+    Serial.print("Choice menu range ");
     Serial.print(displayRange[0]);
     Serial.print(" ");
     Serial.println(displayRange[1]);
@@ -968,67 +1034,42 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
     Serial.println(oledDisplay.getHeight());
     Serial.println("===========================================");
     Serial.println("Menu:");
-    Serial.print("Display range ");
-    Serial.print(displayRange[0]);
-    Serial.print(" ");
-    Serial.println(displayRange[1]);
     #endif
     for(int menuIdx = displayRange[0]; menuIdx <= displayRange[1]; menuIdx++)
     {
-      #ifdef VERBOSE_DEBUG
+      #ifdef DEBUG_VERBOSE
       Serial.println(choices[menuIdx].description);
       #endif
       rectPosition[0] = 0;//textPosition[0];
       rectPosition[1] = textPosition[1];
-      if(strlen(choices[menuIdx].description.c_str()) > maxWidth)
-      {
-        sprintf(outStr, "%s", choices[menuIdx].description.substring(0, maxWidth - 1).c_str());
-      }
-      else
-      {
-        sprintf(outStr, "%s", choices[menuIdx].description.c_str());
-      }
-      rectPosition[2] = oledDisplay.getStringWidth(outStr) + 10;
+      sprintf(outStr, "%s", choices[menuIdx].description.c_str());
+      rectPosition[2] = oledDisplay.getWidth();
       rectPosition[3] = oledDisplay.getStringHeight(outStr);
-      #ifdef VERBOSE_DEBUG
+      #ifdef DEBUG_VERBOSE
       Serial.print(outStr);
       #endif
       if(menuIdx == selection)
       {
-        #ifdef VERBOSE_DEBUG
+        #ifdef DEBUG_VERBOSE
         Serial.println(" SELECTED");
-        Serial.print("Selection box X ");
-        Serial.print(rectPosition[0]);
-        Serial.print(" Y ");
-        Serial.print(rectPosition[1]);
-        Serial.print(" W ");
-        Serial.print(rectPosition[2]);
-        Serial.print(" H ");
-        Serial.println(rectPosition[3]);
-        Serial.print("Screen W ");
-        Serial.print(oledDisplay.getWidth());
-        Serial.print(" H ");
-        Serial.print(oledDisplay.getHeight());
-        Serial.print(" Y bottom ");
-        Serial.println(rectPosition[1] + oledDisplay.getStringHeight("X"));
         #endif
         oledDisplay.rectangleFill(rectPosition[0], rectPosition[1], rectPosition[2], rectPosition[3], COLOR_WHITE);
         oledDisplay.text(textPosition[0], textPosition[1], outStr, COLOR_BLACK);
       }
       else
       {
-        #ifdef VERBOSE_DEBUG
+        #ifdef DEBUG_VERBOSE
         Serial.println(" NOT SELECTED");
         #endif
         oledDisplay.text(textPosition[0], textPosition[1], outStr, COLOR_WHITE);
       }
       textPosition[1] += oledDisplay.getStringHeight("X");
     }
-    #ifdef VERBOSE_DEBUG
-    Serial.println("displaying to OLED");
+    #ifdef DEBUG_VERBOSE
+    Serial.println("displaying updated menu to OLED");
     #endif
     oledDisplay.display();
-    #ifdef VERBOSE_DEBUG
+    #ifdef DEBUG_VERBOSE
     Serial.println("done");
     #endif
     while(true)
@@ -1099,7 +1140,7 @@ void SelectCar()
     choices[idx].description = cars[idx].carName;
     choices[idx].result = idx; 
   }
-  selectedCar =  MenuSelect(choices, carCount, 4, 0, 19); 
+  selectedCar =  MenuSelect(choices, carCount, 4, 0); 
   #ifdef DEBUG_VERBOSE
   Serial.print("Selected car from SelectCar() ") ;
   Serial.print(selectedCar) ;
@@ -1124,7 +1165,7 @@ void ChangeSettings()
     sprintf(buf, "Pass %s", pass);
     choices[4].description = buf;             choices[4].result = 4;
     choices[5].description = "Exit";          choices[5].result = 3;
-    result =  MenuSelect(choices, menuCount, 4, 0, 19); 
+    result =  MenuSelect(choices, menuCount, 4, 0); 
     switch(result)
     {
       case 0:
@@ -1149,7 +1190,7 @@ void SetUnits()
   int menuCount = 2;
   choices[0].description = "Temp in F";   choices[0].result = 0;
   choices[1].description = "Temp in C";   choices[1].result = 1;
-  int menuResult =  MenuSelect(choices, menuCount, 4, 0, 19); 
+  int menuResult =  MenuSelect(choices, menuCount, 4, 0); 
   // true for C, false for F
   tempUnits = menuResult == 1;
 }
@@ -1161,13 +1202,24 @@ void SetDateTime()
   char outStr[256];
   int timeVals[8] = {0, 0, 0, 0, 0, 0, 0, 0};  // date, month, year, day, hour, min, sec, 100ths
   bool isPM = false;
-  int textPosition[2] = {0, 0};
+  int textPosition[2] = {5, 0};
   int setIdx = 0;
   unsigned long curTime = millis();
   int delta = 0;
+  #ifndef HAS_RTC
+  oledDisplay.erase();
+  oledDisplay.text(textPosition[0], textPosition[1], "RTC not");
+  textPosition[1] += oledDisplay.getStringHeight("X");
+  oledDisplay.text(textPosition[0], textPosition[1], "present");
+  oledDisplay.display();
+  delay(5000);
+  return;
+  #endif
+
+
   if (rtc.updateTime() == false) 
   {
-    #ifdef VERBOSE_DEBUG
+    #ifdef DEBUG_VERBOSE
     Serial.print("RTC failed to update");
     #endif
   }
@@ -1380,7 +1432,7 @@ void DeleteDataFile()
   int menuCount = 2;
   choices[0].description = "Yes";      choices[0].result = 1;
   choices[1].description = "No";   choices[1].result = 0;
-  int menuResult = MenuSelect (choices, menuCount, 4, 1, 19); 
+  int menuResult = MenuSelect (choices, menuCount, 4, 1); 
   if(menuResult == 1)
   {
     #ifdef DEBUG_HTML
@@ -1694,12 +1746,19 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
   int tireNameRange[2] = {99, 99};
   int posNameRange[2] = {99, 99};
   char* token;
-  File file = SD.open("/py_temps.txt", FILE_READ);
+  File file = SD.open(path, FILE_READ);
   if(!file)
   {
     #ifdef DEBUG_VERBOSE
     Serial.println("Failed to open file for reading");
     #endif
+    oledDisplay.erase();
+    oledDisplay.setFont(demoFonts[1]);  
+    oledDisplay.text(5, 0,  "No results for");
+    oledDisplay.text(5, oledDisplay.getStringHeight("X"), cars[selectedCar].carName.c_str());
+    oledDisplay.text(5, 2* oledDisplay.getStringHeight("X"), "Select another car");
+    oledDisplay.display();
+    delay(5000);
     return;
   }
   int menuCnt = 0;
@@ -1710,19 +1769,33 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     {
       break;
     }
-    choices[menuCnt].description = buf;      choices[menuCnt].result = menuCnt;
+    token = strtok(buf, ";");
+    #ifdef DEBUG_VERBOSE
+    Serial.print("result (");
+    Serial.print(menuCnt);
+    Serial.print(") ");
+    Serial.println(token);
+    #endif
+    choices[menuCnt].description = token;      choices[menuCnt].result = menuCnt;
     menuCnt++;
   }
-  int menuResult = MenuSelect(choices, menuCnt, 4, 0, 19);
+  int menuResult = MenuSelect(choices, menuCnt, 4, 0);
   file.close();
   // at this point, we need to parse the selected line and add to a measurment structure for display
   // get to the correct line
-  file = SD.open("/py_temps.txt", FILE_READ);
+  file = SD.open(path, FILE_READ);
   if(!file)
   {
     #ifdef DEBUG_VERBOSE
     Serial.println("Failed to open file for reading");
     #endif
+    oledDisplay.erase();
+    oledDisplay.setFont(demoFonts[1]);  
+    oledDisplay.text(5, 0,  "No results for");
+    oledDisplay.text(5, oledDisplay.getStringHeight("X"), cars[selectedCar].carName.c_str());
+    oledDisplay.text(5, 2* oledDisplay.getStringHeight("X"), "Select another car");
+    oledDisplay.display();
+    delay(5000);
     return;
   }
   for (int lineNumber = 0; lineNumber <= menuResult; lineNumber++)
@@ -1801,8 +1874,10 @@ void WriteResultsHTML()
       #endif
       continue;
     }
+    #ifdef DEBUG_VERBOSE
     Serial.print(nameBuf);
     Serial.println(" opened for reading");
+    #endif
     bool outputSubHeader = true;
     while(true)
     {
