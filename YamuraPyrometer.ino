@@ -25,7 +25,8 @@
   setup file on microSD card
   wifi interface for display, up/down load (to add)
 */
-
+//#define RTC_RV1805
+#define RTC_RV8803
 #include <Arduino.h>
 #include <WiFi.h>
 #include <AsyncTCP.h>
@@ -36,7 +37,12 @@
 #include "FS.h"
 #include "SD.h"
 #include "SPI.h"
+#ifdef RTC_RV1805
 #include <SparkFun_RV1805.h>
+#endif
+#ifdef RTC_RV8803
+#include <SparkFun_RV8803.h> //Get the library here:http://librarymanager/All#SparkFun_RV-8803
+#endif
 
 // OLED Fonts
 #include <res/qw_fnt_5x7.h>
@@ -49,7 +55,7 @@
 //#define DEBUG_VERBOSE
 //#define DEBUG_HTML
 // uncomment for RTC module attached
-//#define HAS_RTC
+#define HAS_RTC
 // uncomment for thermocouple module attached
 #define HAS_THERMO
 // uncomment to write INI file
@@ -72,6 +78,16 @@
 #define DISPLAY_SELECTED_RESULT 4
 #define CHANGE_SETTINGS         5
 #define INSTANT_TEMP            6
+
+// index to date/time value array
+#define DATE    0
+#define MONTH   1
+#define YEAR    2
+#define DAY     3
+#define HOUR    4
+#define MINUTE  5
+#define SECOND  6
+#define HUNDSEC 7
 
 static InputDebounce buttonArray[BUTTON_COUNT];
 int buttonPin[BUTTON_COUNT] = {BUTTON_1, BUTTON_2, BUTTON_3};
@@ -110,7 +126,13 @@ MenuChoice choices[50];
 // thermocouple amplifier
 MCP9600 tempSensor;
 // rtc
+#ifdef RTC_RV1805
 RV1805 rtc;
+#endif
+#ifdef RTC_RV8803
+RV8803 rtc;
+#endif
+
 // OLED display
 QwiicTransparentOLED oledDisplay;
 // An array of available fonts
@@ -410,22 +432,14 @@ void setup()
     }
     oledDisplay.text(5, oledDisplay.getStringHeight("X"), "RTC OK");
     oledDisplay.display();
-    delay(1000);
-    //Use the time from the Arduino compiler (build time) to set the RTC
-    //Keep in mind that Arduino does not get the new compiler time every time it compiles. to ensure the proper time is loaded, open up a fresh version of the IDE and load the sketch.
-    //if (rtc.setToCompilerTime() == false) 
-    //{
-    //  #ifdef DEBUG_VERBOSE
-    //  Serial.println("RTC failed to set time");
-    //  #endif
-    //}
     #ifdef DEBUG_VERBOSE
     Serial.println("RTC online!");
     #endif
+    delay(1000);
   #else
-  oledDisplay.text(5, oledDisplay.getStringHeight("X"), "RTC not present");
-  oledDisplay.display();
-  delay(1000);
+    oledDisplay.text(5, oledDisplay.getStringHeight("X"), "RTC not present");
+    oledDisplay.display();
+    delay(1000);
   #endif
 
   Serial.println();
@@ -1223,14 +1237,36 @@ void SetDateTime()
     Serial.print("RTC failed to update");
     #endif
   }
-  timeVals[0] = rtc.getDate();
-  timeVals[1] = rtc.getMonth();
-  timeVals[2] = rtc.getYear() + 2000;
-  timeVals[3] = rtc.getWeekday();
-  timeVals[4] = rtc.getHours();
-  timeVals[5] = rtc.getMinutes();
+  timeVals[DATE] = rtc.getDate();
+  timeVals[MONTH] = rtc.getMonth();
+  //#define 
+  #ifdef RTC_RV1805
+  timeVals[YEAR] = rtc.getYear() + 2000;
+  #endif
+  #ifdef RTC_RV8803
+  timeVals[YEAR] = rtc.getYear();
+  #endif
+  timeVals[DAY] = rtc.getWeekday();
+  timeVals[HOUR] = rtc.getHours();
+  timeVals[MINUTE] = rtc.getMinutes();
   isPM = rtc.isPM();
-  
+  #ifdef DEBUG_VERBOSE
+  Serial.print("GET Date/Time DATE: ");
+  Serial.print(timeVals[DATE]);
+  Serial.print(" MONTH: ");
+  Serial.print(timeVals[MONTH]);
+  Serial.print(" DAY OF WEEK: ");
+  Serial.print(timeVals[DAY]);
+  Serial.print(" YEAR: ");
+  Serial.print(timeVals[YEAR]);
+  Serial.print(" HOUR: ");
+  Serial.print(timeVals[HOUR]);
+  Serial.print(" MINUTE: ");
+  Serial.print(timeVals[MINUTE]);
+  Serial.print(" AM/PM: ");
+  Serial.print(isPM ? "PM" : "AM");
+  Serial.println();
+  #endif
   for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
   {
     buttonReleased[btnIdx] = false;
@@ -1245,8 +1281,8 @@ void SetDateTime()
     
     textPosition[1] += oledDisplay.getStringHeight("X");
 
-    sprintf(outStr, "%02d/%02d/%04d ", timeVals[0], timeVals[1], timeVals[2]);
-    switch(timeVals[3])
+    sprintf(outStr, "%02d/%02d/%04d ", timeVals[DATE], timeVals[MONTH], timeVals[YEAR]);
+    switch(timeVals[DAY])
     {
       case 2:
         strcat(outStr, "M");
@@ -1277,16 +1313,16 @@ void SetDateTime()
     if(setIdx < 4)
     {
       textPosition[1] += oledDisplay.getStringHeight(outStr);;
-      sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "--" : "  "), (setIdx == 1 ? "--" : "  "), (setIdx == 2 ? "----" : "    "), (setIdx == 3 ? "--" : "  "));
+      sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "dd" : "  "), (setIdx == 1 ? "mm" : "  "), (setIdx == 2 ? "yyyy" : "    "), (setIdx == 3 ? "ww" : "  "));
       oledDisplay.text(textPosition[0], textPosition[1], outStr);
     }
     textPosition[1] += oledDisplay.getStringHeight(outStr);;
-    sprintf(outStr, "%02d:%02d %s", timeVals[4], timeVals[5], (isPM ? "PM" : "AM"));
+    sprintf(outStr, "%02d:%02d %s", timeVals[HOUR], timeVals[MINUTE], (isPM ? "PM" : "AM"));
     oledDisplay.text(textPosition[0], textPosition[1], outStr);
     if(setIdx > 3)
     {
       textPosition[1] += oledDisplay.getStringHeight(outStr);;
-      sprintf(outStr, "%s %s %s", (setIdx == 4 ? "--" : "  "), (setIdx == 5 ? "--" : "  "), (setIdx == 6 ? "--" : "  "));
+      sprintf(outStr, "%s %s %s", (setIdx == 4 ? "hh" : "  "), (setIdx == 5 ? "mm" : "  "), (setIdx == 6 ? "ap" : "  "));
       oledDisplay.text(textPosition[0], textPosition[1], outStr);
     }
     
@@ -1328,69 +1364,69 @@ void SetDateTime()
       switch (setIdx)
       {
         case 0:  // date
-          timeVals[0] += delta;
-          if(timeVals[0] <= 0)
+          timeVals[DATE] += delta;
+          if(timeVals[DATE] <= 0)
           {
-            timeVals[0] = 31;
+            timeVals[DATE] = 31;
           }
-          if(timeVals[0] > 31)
+          if(timeVals[DATE] > 31)
           {
-            timeVals[0] = 1;
+            timeVals[DATE] = 1;
           }
           break;
         case 1:  // month
-          timeVals[1] += delta;
-          if(timeVals[1] <= 0)
+          timeVals[MONTH] += delta;
+          if(timeVals[MONTH] <= 0)
           {
-            timeVals[1] = 12;
+            timeVals[MONTH] = 12;
           }
-          if(timeVals[1] > 12)
+          if(timeVals[MONTH] > 12)
           {
-            timeVals[1] = 1;
+            timeVals[MONTH] = 1;
           }
           break;
         case 2:  // year
-          if(timeVals[2] < 2020)
+          if(timeVals[YEAR] < 2020)
           {
-            timeVals[2] = 2020;
+            timeVals[YEAR] = 2020;
           }
-          if(timeVals[2] > 2100)
+          if(timeVals[YEAR] > 2100)
           {
-            timeVals[2] = 2020;
+            timeVals[YEAR] = 2020;
           }
-          timeVals[2] += delta;
+          timeVals[YEAR] += delta;
           break;
         case 3:  // day
-          timeVals[3] += delta;
-          if(timeVals[3] < 0)
+          timeVals[DAY] += delta;
+          if(timeVals[DAY] < 0)
           {
-            timeVals[3] = 6;
+            timeVals[DAY] = 6;
           }
-          if(timeVals[3] > 6)
+          if(timeVals[DAY] > 6)
           {
-            timeVals[3] = 0;
+            timeVals[DAY] = 0;
           }
           break;
         case 4:  // hour
-          timeVals[4] += delta;
-          if(timeVals[4] < 0)
+          timeVals[HOUR] += delta;
+          if(timeVals[HOUR] < 0)
           {
-            timeVals[4] = 12;
+            timeVals[HOUR] = 12;
           }
-          if(timeVals[4] > 12)
+          if(timeVals[HOUR] > 12)
           {
-            timeVals[4] = 1;
+            timeVals[HOUR] = 1;
           }
           break;
         case 5:  // minute
-          timeVals[5] += delta;
-          if(timeVals[5] < 0)
+          timeVals[MINUTE] += delta;
+          if(timeVals[MINUTE] < 0)
           {
-            timeVals[5] = 59;
+            timeVals[MINUTE] = 59;
           }
-          if(timeVals[5] > 59)
+          if(timeVals[MINUTE] > 59)
           {
-            timeVals[5] = 0;
+            timeVals[MINUTE] = 0;
           }
           break;
         case 6:  // am/pm
@@ -1410,17 +1446,34 @@ void SetDateTime()
   if(isPM)
   {
     rtc.set24Hour();
-    if (timeVals[4] < 12)
+    if (timeVals[HOUR] < 12)
     {
-      timeVals[4] += 12;
+      timeVals[HOUR] += 12;
     }
   }
-  //              hund,        sec,          min,         hour,        date         month,       year,        day
-  if(!rtc.setTime(timeVals[6], timeVals[7],  timeVals[5], timeVals[4], timeVals[0], timeVals[1], timeVals[2], timeVals[3]))
+  #ifdef DEBUG_VERBOSE
+  Serial.print("SET Date/Time DATE: ");
+  Serial.print(timeVals[DATE]);
+  Serial.print(" MONTH: ");
+  Serial.print(timeVals[MONTH]);
+  Serial.print(" DAY OF WEEK: ");
+  Serial.print(timeVals[DAY]);
+  Serial.print(" YEAR: ");
+  Serial.print(timeVals[YEAR]);
+  Serial.print(" HOUR: ");
+  Serial.print(timeVals[HOUR]);
+  Serial.print(" MINUTE: ");
+  Serial.print(timeVals[MINUTE]);
+  Serial.print(" AM/PM: ");
+  Serial.print(isPM ? "PM" : "AM");
+  Serial.println();
+  #endif
+  //              sec                min               hour            day of week    date            month            year
+  if(!rtc.setTime(timeVals[SECOND],  timeVals[MINUTE], timeVals[HOUR], timeVals[DAY], timeVals[DATE], timeVals[MONTH], timeVals[YEAR]))
   {
-    //#ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_VERBOSE
     Serial.println("Set time failed");
-    //#endif
+    #endif
   }
   rtc.set12Hour();
 }
