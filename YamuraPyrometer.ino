@@ -1267,12 +1267,29 @@ void MeasureAllTireTemps()
       break;
     }
   }
+  // done, copy local to global
+  #ifdef HAS_RTC
+  UpdateTime();
+  cars[selectedCar].dateTime = GetStringTime();
+  curTimeStr = GetStringTime();
+  curTimeStr += " ";
+  curTimeStr += GetStringDate();
+  sprintf(outStr, "%s;%s;%d;%d", curTimeStr.c_str(), 
+                                 cars[selectedCar].carName.c_str(),
+                                 cars[selectedCar].tireCount, 
+                                 cars[selectedCar].positionCount);
+  #else
+  sprintf(outStr, "%d;%s;%d;%d", millis(), 
+                                 cars[selectedCar].carName.c_str(), 
+                                 cars[selectedCar].tireCount, 
+                                 cars[selectedCar].positionCount);
+  #endif
   String fileLine = outStr;
   for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
   {
     for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
     {
-      tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition] = currentTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
+      //tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition] = currentTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
       fileLine += ';';
       fileLine += tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
     }
