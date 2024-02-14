@@ -1,5 +1,6 @@
 /*
   YamuraLog Recording Tire Pyrometer
+  SparkFun_Qwiic_OLED library version for small OLED display
   By: Brian Smith
   Yamura Electronics Division
   Date: September 2023
@@ -24,41 +25,50 @@
   setup file on microSD card
   wifi interface for display, up/down load (to add)
 */
-
+//#define RTC_RV1805
+//#define RTC_RV8803
+#define HILETGO_DS3231
 #include <Arduino.h>
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <SparkFun_MCP9600.h>
-#include <SparkFun_Qwiic_OLED.h> //http://librarymanager/All#SparkFun_Qwiic_Graphic_OLED
-#include "InputDebounce.h"
+// tft display replaces oled display
+#include <TFT_eSPI.h> // Graphics and font library for ST7735 driver chip
+#include "Free_Fonts.h" // Include the header file attached to this sketch
+//#include <SparkFun_Qwiic_OLED.h> //http://librarymanager/All#SparkFun_Qwiic_Graphic_OLED
+//#include "InputDebounce.h"
 #include "FS.h"
 #include "SD.h"
 #include "SPI.h"
+#ifdef RTC_RV1805
 #include <SparkFun_RV1805.h>
-
+#endif
+#ifdef RTC_RV8803
+#include <SparkFun_RV8803.h> //Get the library here:http://librarymanager/All#SparkFun_RV-8803
+#endif
+#ifdef HILETGO_DS3231
+#include <DS3231-RTC.h> // https://github.com/hasenradball/DS3231-RTC
+#endif
 // OLED Fonts
-#include <res/qw_fnt_5x7.h>
-#include <res/qw_fnt_8x16.h>
-#include <res/qw_fnt_31x48.h>
-#include <res/qw_fnt_7segment.h>
-#include <res/qw_fnt_largenum.h>
+//#include <res/qw_fnt_5x7.h>
+//#include <res/qw_fnt_8x16.h>
+//#include <res/qw_fnt_31x48.h>
+//#include <res/qw_fnt_7segment.h>
+//#include <res/qw_fnt_largenum.h>
+//
+//#include <SparkFunSX1509.h> //Click here for the library: http://librarymanager/All#SparkFun_SX1509
 
 // uncomment for debug to serial monitor
-//#define DEBUG_VERBOSE
+#define DEBUG_VERBOSE
+//#define DEBUG_EXTRA_VERBOSE
 //#define DEBUG_HTML
 // uncomment for RTC module attached
 #define HAS_RTC
-
-//#define BUTTON_1 12
-//#define BUTTON_2 27
-//#define BUTTON_3 33
-// moved for easier wire routing in package
-#define BUTTON_1 26
-#define BUTTON_2 12 //25
-#define BUTTON_3 25 //12
-#define BUTTON_DEBOUNCE_DELAY   20   // [ms]
-#define BUTTON_COUNT 3
+// uncomment for thermocouple module attached
+#define HAS_THERMO
+// uncomment to write INI file
+#define WRITE_INI
 
 #define DISPLAY_MENU            0
 #define SELECT_CAR              1
@@ -67,11 +77,55 @@
 #define DISPLAY_SELECTED_RESULT 4
 #define CHANGE_SETTINGS         5
 #define INSTANT_TEMP            6
+#define DISPLAY_ALL_TIRES           7
+#define MEASURE_ALL_TIRES           8
 
-static InputDebounce buttonArray[BUTTON_COUNT];
-int buttonPin[BUTTON_COUNT] = {BUTTON_1, BUTTON_2, BUTTON_3};
-int buttonReleased[BUTTON_COUNT] = {0, 0, 0};
-unsigned long pressDuration[BUTTON_COUNT] = {0, 0, 0};
+//#define FONT_NUMBER             4
+//#define FONT_HEIGHT            25
+#define FONT_NUMBER             4
+#define FONT_HEIGHT            25
+#define DISPLAY_WIDTH         480
+#define DISPLAY_HEIGHT        320
+
+// index to date/time value array
+#define DATE    0
+#define MONTH   1
+#define YEAR    2
+#define DAY     3
+#define HOUR    4
+#define MINUTE  5
+#define SECOND  6
+#define HUNDSEC 7
+
+//#define BUTTON_COUNT 1
+#define BUTTON_COUNT 4
+//#define BUTTON_1 12
+//#define BUTTON_2 27
+//#define BUTTON_3 33
+// user inputs
+#define BUTTON_1 0
+#define BUTTON_2 1
+#define BUTTON_3 2
+#define BUTTON_4 3
+#define BUTTON_RELEASED 0
+#define BUTTON_PRESSED  1
+#define BUTTON_DEBOUNCE_DELAY   20   // [ms]
+struct UserButton
+{
+  int buttonPin = 0;
+  bool buttonReleased = false;
+  bool buttonPressed =  false;
+  byte buttonLast =     BUTTON_RELEASED;
+  unsigned long pressDuration = 0;
+  unsigned long releaseDuration = 0;
+  unsigned long lastChange = 0;
+};
+UserButton buttons[BUTTON_COUNT];
+
+String GetStringTime();
+String GetStringDate();
+bool UpdateTime();
+
 char buf[512];
 
 // car info structure
@@ -105,7 +159,22 @@ MenuChoice choices[50];
 // thermocouple amplifier
 MCP9600 tempSensor;
 // rtc
+#ifdef RTC_RV1805
 RV1805 rtc;
+#endif
+#ifdef RTC_RV8803
+RV8803 rtc;
+#endif
+#ifdef HILETGO_DS3231
+DS3231 rtc;
+#endif
+
+bool century = false;
+bool h12Flag;
+bool pmFlag;
+String days[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri","Sat"};
+String ampmStr[3] = {"am", "pm", "(24H)"};
+/*
 // OLED display
 QwiicTransparentOLED oledDisplay;
 // An array of available fonts
@@ -121,6 +190,10 @@ int nFONTS = sizeof(demoFonts) / sizeof(demoFonts[0]);
 #define FONT_31X48    2
 #define FONT_5X7      3
 #define FONT_7SEGMENT 4
+*/
+#define MAX_DISPLAY_LINES 12
+// TFT display
+TFT_eSPI oledDisplay = TFT_eSPI();
 
 unsigned long prior = 0;
 
@@ -147,13 +220,12 @@ AsyncWebServer server(80);
 AsyncWebSocket wsServoInput("/ServoInput");
 String htmlStr;
 
+//const byte SX1509_ADDRESS = 0x3E; // SX1509 I2C address
+//SX1509 io;                        // Create an SX1509 object to be used throughout
+
 // function prototypes
 void WriteResultsHTML();
 void ParseResult(char buf[], CarSettings &currentResultCar);
-void button_pressedCallback(uint8_t pinIn);
-void button_releasedCallback(uint8_t pinIn);
-void button_pressedDurationCallback(uint8_t pinIn, unsigned long duration);
-void button_releasedDurationCallback(uint8_t pinIn, unsigned long duration);
 void DeleteFile(fs::FS &fs, const char * path);
 void AppendFile(fs::FS &fs, const char * path, const char * message);
 void ReadLine(File file, char* buf);
@@ -167,75 +239,138 @@ void SetDateTime();
 void SetUnits();
 void ChangeSettings();
 void SelectCar();
-int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect, int maxWidth);
-void DisplayTireTemps(CarSettings currentResultCar);
-void MeasureTireTemps();
+int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect);
+//void DisplayTireTemps(CarSettings currentResultCar);
+void MeasureTireTemps(int tire);
+void DisplayAllTireTemps(CarSettings currentResultCar);
+void MeasureAllTireTemps();
 void DisplayMenu();
 void InstantTemp();
+void CheckButtons(unsigned long curTime);
+void YamuraBanner();
+
 //
 //
 //
+#define sd_CS 5
+#define I2C_SDA 21
+#define I2C_SCL 22
+
 void setup()
 {
   Serial.begin(115200);
   #ifdef DEBUG_VERBOSE
+  delay(1000);
   Serial.println();
   Serial.println();
   Serial.println("YamuraLog Recording Tire Pyrometer V1.0");
+  Serial.println("Pin assignments");
+  Serial.println("Buttons");
+  Serial.println("----------------");
+  Serial.print("\tButton 1 ");
+  Serial.println(BUTTON_1);
+  Serial.print("\tButton 2 ");
+  Serial.println(BUTTON_2);
+  Serial.print("\tButton 3 ");
+  Serial.println(BUTTON_3);
+  Serial.print("\tButton 4 ");
+  Serial.println(BUTTON_4);
+
+  Serial.println("SPI bus");
+  Serial.println("-------");
+  Serial.print("\tSCK ");
+  Serial.println(SCK);
+  Serial.print("\tMISO ");
+  Serial.println(MISO);
+  Serial.print("\tMOSI ");
+  Serial.println(MOSI);
+  
+  Serial.println("microSD (SPI)");
+  Serial.println("-------------");
+  Serial.print("\tCS ");
+  Serial.println(sd_CS);  
+  
+  Serial.println("TFT display (SPI)");
+  Serial.println("-----------------");
+  Serial.print("\tTFT_CS ");
+  Serial.println(TFT_CS);  
+  Serial.print("\tTFT_DC ");
+  Serial.println(TFT_DC);  
+  Serial.print("\tTFT_RST ");
+  Serial.println(TFT_RST);  
+  
+  Serial.println("I2C bus");
+  Serial.println("-------");
+  Serial.print("\tI2C_SDA ");
+  Serial.println(I2C_SDA);
+  Serial.print("\tI2C_SCL ");
+  Serial.println(I2C_SCL);
+
   #endif
-  // register callback functions (shared, used by all buttons)
-  // setup input buttons (debounced)
-  for(int buttonIdx = 0; buttonIdx < BUTTON_COUNT; buttonIdx++)
-  {
-    buttonArray[buttonIdx].registerCallbacks(button_pressedCallback, 
-                                             button_releasedCallback, 
-                                             button_pressedDurationCallback, 
-                                             button_releasedDurationCallback);
-    buttonArray[buttonIdx].setup(buttonPin[buttonIdx], 
-                                 BUTTON_DEBOUNCE_DELAY, 
-                                 InputDebounce::PIM_INT_PULL_UP_RES);
-  }
+  // setup buttons on SX1509
+  buttons[0].buttonPin = 12;
+  buttons[1].buttonPin = 14;
+  buttons[2].buttonPin = 26;
+  buttons[3].buttonPin = 27;
+  // set up tft display
+  oledDisplay.init();
 
+  int w = oledDisplay.width();
+  int h = oledDisplay.height();
+  // 0 portrait pins down
+  // 1 landscape pins right
+  // 2 portrait pins up
+  // 3 landscape pins left
+  oledDisplay.setRotation(1);
 
-  Wire.begin();             // start I2C
-  // Initalize the OLED device and related graphics system
-  while (!oledDisplay.begin(Wire, 0x3C))
-  {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("OLED begin failed. Freezing...");
-    #endif
-  }
+  oledDisplay.fillScreen(TFT_BLACK);
+  YamuraBanner();
 
-  oledDisplay.setFont(demoFonts[1]);  
-  oledDisplay.erase();
-  oledDisplay.text(5, 0, "Yamura Electronics");
-  oledDisplay.text(5, oledDisplay.getStringHeight("X"), "Recording Pyrometer");
-  oledDisplay.display();
-  delay(10000);
+  oledDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  oledDisplay.drawString("Yamura Electronics",5, 0, FONT_NUMBER);
+  oledDisplay.drawString("Recording Pyrometer",5, FONT_HEIGHT, FONT_NUMBER);
+  //
   #ifdef DEBUG_VERBOSE
   Serial.print("OLED screen size ");
-  Serial.print(oledDisplay.getWidth());
+  Serial.print(DISPLAY_WIDTH/*oledDisplay.getWidth()*/);
   Serial.print(" x ");
-  Serial.print(oledDisplay.getHeight());
+  Serial.print(DISPLAY_HEIGHT/*oledDisplay.getHeight()*/);
   Serial.println("");
   #endif
+  // start I2C
+  #ifdef DEBUG_VERBOSE
+  Serial.println("Start I2C");
+  #endif
+  int sda = I2C_SDA;
+  int scl = I2C_SCL;
+  pinMode(sda, OUTPUT);
+  pinMode(scl, OUTPUT);
+  Wire.setPins(sda, scl);
+  Wire.begin();
+  Wire.setClock(100000);
+  delay(5000);
 
   tempSensor.begin();       // Uses the default address (0x60) for SparkFun Thermocouple Amplifier
-  //check if the sensor is connected
-  if(tempSensor.isConnected())
-  {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("Thermocouple Device acknowledged!");
-    #endif
-  }
-  else 
+  //else 
+  while(!tempSensor.isConnected())
   {
     #ifdef DEBUG_VERBOSE
     Serial.println("Thermocouple did not acknowledge! Freezing.");
     #endif
-    while(1); //hang forever
+    //oledDisplay.fillScreen(TFT_BLACK);
+    oledDisplay.drawString("Thermocouple FAIL", 5, FONT_HEIGHT * 2, FONT_NUMBER);
+    //oledDisplay.display();
+    //while(true); //hang forever
+    delay(5000);
   }
-
+  //check if the sensor is connected
+  #ifdef DEBUG_VERBOSE
+  Serial.println("Thermocouple Device acknowledged!");
+  #endif
+  //oledDisplay.fillScreen(TFT_BLACK);
+  oledDisplay.drawString("Thermocouple OK", 5, FONT_HEIGHT * 2, FONT_NUMBER);
+  //oledDisplay.display();
+  delay(1000);
   //check if the Device ID is correct
   if(tempSensor.checkDeviceID())
   {
@@ -377,34 +512,70 @@ void setup()
       break;
   }
   #ifdef HAS_RTC
+  #ifndef HILETGO_DS3231
     if (rtc.begin() == false) 
     {
       #ifdef DEBUG_VERBOSE
       Serial.println("RTC not initialized, check wiring");
       #endif
+      oledDisplay.drawString("RTC FAIL", 5, FONT_HEIGHT * 3, FONT_NUMBER);
+      //oledDisplay.display();
+      while(true);
     }
-    //Use the time from the Arduino compiler (build time) to set the RTC
-    //Keep in mind that Arduino does not get the new compiler time every time it compiles. to ensure the proper time is loaded, open up a fresh version of the IDE and load the sketch.
-    //if (rtc.setToCompilerTime() == false) 
-    //{
-    //  #ifdef DEBUG_VERBOSE
-    //  Serial.println("RTC failed to set time");
-    //  #endif
-    //}
+    oledDisplay.drawString("RTC OK", 5, FONT_HEIGHT * 3, FONT_NUMBER);
+    //oledDisplay.display();
     #ifdef DEBUG_VERBOSE
     Serial.println("RTC online!");
     #endif
+    delay(1000);
+  //#else
+  //  oledDisplay.drawString("RTC not present",5, FONT_HEIGHT  * 4/*oledDisplay.getStringHeight("X")*/, FONT_NUMBER);
+  //  //oledDisplay.display();
+  //  delay(1000);
   #endif
+  #endif
+  oledDisplay.drawString("RTC OK",        5, FONT_HEIGHT * 3, FONT_NUMBER);
+  oledDisplay.drawString(GetStringTime(), 5, FONT_HEIGHT * 4, FONT_NUMBER);
+  oledDisplay.drawString(GetStringDate(), 5, FONT_HEIGHT * 5, FONT_NUMBER);
 
   Serial.println();
 
-  if(!SD.begin(5))
+ // Call io.begin(<address>) to initialize the SX1509. If it
+  // successfully communicates, it'll return 1.
+  //if (io.begin(SX1509_ADDRESS) == false)
+  //{
+  //  Serial.println("Failed to communicate. Check wiring and address of SX1509.");
+  //  while (1)
+  //    ; // If we fail to communicate, loop forever.
+  //}
+
+  // use io.pinMode(<pin>, <mode>) to set input pins as either
+  // INPUT or INPUT_PULLUP. Set up a floating (or jumpered to
+  // either GND or 3.3V) pin to an INPUT:
+  Serial.println("Button setup");
+  for(int idx = 0; idx < BUTTON_COUNT; idx++)
+  {
+    #ifdef DEBUG_EXTRA_VERBOSE
+    Serial.print("Button ");
+    Serial.print(idx);
+    Serial.print(" Pin ");
+    Serial.println(buttons[idx].buttonPin);
+    #endif
+    //io.pinMode((byte)buttons[idx].buttonPin, INPUT_PULLUP);
+    pinMode(buttons[idx].buttonPin, INPUT_PULLUP);
+  }
+
+  if(!SD.begin(sd_CS))
   {
     #ifdef DEBUG_VERBOSE
-    Serial.println("Card Mount Failed");
+    Serial.println("microSD card mount Failed");
     #endif
-    return;
+    oledDisplay.drawString("microSD card mount failed", 5, FONT_HEIGHT  * 6, FONT_NUMBER);
+    //oledDisplay.display();
+    while(true);
   }
+  oledDisplay.drawString("microSD OK", 5, FONT_HEIGHT  * 6, FONT_NUMBER);
+  //oledDisplay.display();
   uint8_t cardType = SD.cardType();
   if(cardType == CARD_NONE)
   {
@@ -441,14 +612,18 @@ void setup()
     #endif
   }
   uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-
   #ifdef DEBUG_VERBOSE
   Serial.printf("SD Card Size: %lluMB\n", cardSize);
   #endif
   // uncomment to write a default setup file
   // maybe check for setup and write one if needed?
-  //DeleteFile(SD, "/py_setup.txt");
-  //WriteSetupFile(SD, "/py_setup.txt");
+  #ifdef WRITE_INI
+  #ifdef DEBUG_VERBOSE
+  Serial.println("Write setup file");
+  #endif
+  DeleteFile(SD, "/py_setup.txt");
+  WriteSetupFile(SD, "/py_setup.txt");
+  #endif
   ReadSetupFile(SD,  "/py_setup.txt");
 
   ResetTempStable();
@@ -459,18 +634,18 @@ void setup()
   #endif
   #ifdef HAS_RTC
   //Updates the time variables from RTC
-  if (rtc.updateTime() == false) 
+  if (UpdateTime() == false) 
   {
     #ifdef DEBUG_VERBOSE
     Serial.print("RTC failed to update");
     #endif
   }
   #endif
-  oledDisplay.erase();
-  oledDisplay.text(5, 0, "Ready!");
+  //oledDisplay.fillScreen(TFT_BLACK);
+  oledDisplay.drawString("Ready!",5, FONT_HEIGHT * 7, FONT_NUMBER);
   #ifdef HAS_RTC
-  oledDisplay.text(5, 1 * oledDisplay.getStringHeight("X"), rtc.stringTime());
-  oledDisplay.text(5, 2 * oledDisplay.getStringHeight("X"), rtc.stringDateUSA());
+  oledDisplay.drawString(GetStringTime(), 5, FONT_HEIGHT * 8, FONT_NUMBER);
+  oledDisplay.drawString(GetStringDate(), 5, FONT_HEIGHT * 9, FONT_NUMBER);
   #endif
   prior = millis();
   deviceState = DISPLAY_MENU;
@@ -478,7 +653,7 @@ void setup()
   WriteResultsHTML();
   WiFi.softAP(ssid, pass);
   IP = WiFi.softAPIP();
-  #ifdef VERBOSE_DEBUG
+  #ifdef DEBUG_VERBOSE
   Serial.print("AP IP address: ");
   Serial.println(IP);
   Serial.print(ssid);
@@ -500,12 +675,12 @@ void setup()
   wsServoInput.onEvent(onServoInputWebSocketEvent);
   server.addHandler(&wsServoInput);
   server.begin();
+  sprintf(buf, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
+  oledDisplay.drawString(buf, 5, FONT_HEIGHT * 10, FONT_NUMBER);
   #ifdef DEBUG_VERBOSE
   Serial.println("HTTP server started");
+  Serial.println(buf);
   #endif
-  sprintf(buf, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
-  oledDisplay.text(5, 3 * oledDisplay.getStringHeight(buf), buf);
-  oledDisplay.display();
   delay(5000);
 }
 //
@@ -523,15 +698,19 @@ void loop()
       deviceState = DISPLAY_MENU;
       break;
     case MEASURE_TIRES:
-      MeasureTireTemps();
+      MeasureAllTireTemps();
+      //MeasureTireTemps();
       deviceState = DISPLAY_TIRES;
       break;
     case DISPLAY_TIRES:
-      DisplayTireTemps(cars[selectedCar]);
+      //DisplayTireTemps(cars[selectedCar]);
+      DisplayAllTireTemps(cars[selectedCar]);
       deviceState = DISPLAY_MENU;
       break;
     case DISPLAY_SELECTED_RESULT:
-      DisplaySelectedResults(SD, "/py_temps.txt");
+      char outStr[128];
+      sprintf(outStr, "/py_temps_%d.txt", selectedCar);
+      DisplaySelectedResults(SD, outStr);
       deviceState = DISPLAY_MENU;
       break;
     case CHANGE_SETTINGS:
@@ -540,6 +719,14 @@ void loop()
       break;
     case INSTANT_TEMP:
       InstantTemp();
+      deviceState = DISPLAY_MENU;
+      break;
+    case DISPLAY_ALL_TIRES:
+      DisplayAllTireTemps(cars[selectedCar]);
+      deviceState = DISPLAY_MENU;
+      break;
+    case MEASURE_ALL_TIRES:
+      MeasureAllTireTemps();
       deviceState = DISPLAY_MENU;
       break;
     default:
@@ -551,49 +738,54 @@ void loop()
 //
 void DisplayMenu()
 {
-  int menuCount = 6;
+  int menuCount = 7;
   choices[0].description = "Measure Temps";                   choices[0].result = MEASURE_TIRES;
   choices[1].description = cars[selectedCar].carName.c_str(); choices[1].result = SELECT_CAR;
-  choices[2].description = "Display Temps";                   choices[2].result = DISPLAY_TIRES;
+  choices[2].description = "Display All Temps";               choices[2].result = DISPLAY_ALL_TIRES;
+  //choices[2].description = "Display Temps";                   choices[2].result = DISPLAY_TIRES;
   choices[3].description = "Instant Temp";                    choices[3].result = INSTANT_TEMP;
   choices[4].description = "Display Results";                 choices[4].result = DISPLAY_SELECTED_RESULT;
   choices[5].description = "Settings";                        choices[5].result = CHANGE_SETTINGS;
+  choices[6].description = "Measure All Temps";               choices[6].result = MEASURE_ALL_TIRES;
   
-  deviceState =  MenuSelect(choices, menuCount, 4, MEASURE_TIRES, 19); 
+  deviceState =  MenuSelect(choices, menuCount, MAX_DISPLAY_LINES, MEASURE_TIRES); 
 }
 //
 // 
 //
-void MeasureTireTemps()
+void MeasureTireTemps(int tireIdx)
 {
   char outStr[512];
-  tireIdx = 0;  // tire - RF, LF, RR, LR  
+  //tireIdx = 0;  // tire - RF, LF, RR, LR  
   int textPosition[2] = {5, 0};
-  int rectPosition[4] = {0, 0, 0, 0};
-  // local measurement array, allow preserve measurements on cancel
-  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
-  {
-    for(int idxMeas = 0; idxMeas < cars[selectedCar].positionCount; idxMeas++)
-    {
-      currentTemps[(idxTire * cars[selectedCar].positionCount) + idxMeas] = 0.0;
-    }
-  }
-  // measure defined tires
-  #ifdef DEBUG_VERBOSE
-  sprintf(outStr, "Selected car %s (%d) tire count %d positions %d\n", cars[selectedCar].carName.c_str(), 
-                                                                       selectedCar, 
-                                                                       cars[selectedCar].tireCount, 
-                                                                       cars[selectedCar].positionCount);
-  Serial.print(outStr);
-  #endif
+  ////int rectPosition[4] = {0, 0, 0, 0};
+  //// local measurement array, allow preserve measurements on cancel
+  //for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  //{
+  //  for(int idxMeas = 0; idxMeas < cars[selectedCar].positionCount; idxMeas++)
+  //  {
+  //    tireTemps[(idxTire * cars[selectedCar].positionCount) + idxMeas] = 0.0;
+  //  }
+  //}
+  //// measure defined tires
+  //#ifdef DEBUG_VERBOSE
+  //sprintf(outStr, "Selected car %s (%d) tire count %d positions %d\n", cars[selectedCar].carName.c_str(), 
+  //                                                                     selectedCar, 
+  //                                                                     cars[selectedCar].tireCount, 
+  //                                                                     cars[selectedCar].positionCount);
+  //Serial.print(outStr);
+  //#endif
   bool armed = false;
   //
-  while(tireIdx < cars[selectedCar].tireCount)
-  {
+  //while(tireIdx < cars[selectedCar].tireCount)
+  //{
+  //  oledDisplay.fillScreen(TFT_BLACK);
+  //  YamuraBanner();
+
     measIdx = 0;  // measure location - O, M, I
     for(int idx = 0; idx < cars[selectedCar].positionCount; idx++)
     {
-      currentTemps[(tireIdx * cars[selectedCar].positionCount) + idx] = 0.0;
+      tireTemps[(tireIdx * cars[selectedCar].positionCount) + idx] = 0.0;
     }
     ResetTempStable();
     armed = false;
@@ -603,18 +795,18 @@ void MeasureTireTemps()
     textPosition[0] = 5;
     textPosition[1] = 0;
     // measure  defined positions on tire 
+Serial.print("Start tire measurement for ");
+Serial.print(cars[selectedCar].carName.c_str());
+Serial.print(" tire ");
+Serial.println(cars[selectedCar].tireLongName[tireIdx].c_str());
     while(true)
     {
       // get time and process buttons for press/release
       curTime = millis();
-      for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+      CheckButtons(curTime);
+      if (buttons[0].buttonReleased)
       {
-        buttonReleased[btnIdx] = false;
-        buttonArray[btnIdx].process(curTime);
-      }
-      if (buttonReleased[0])
-      {
-        #ifdef VERBOSE_DEBUG
+        #ifdef DEBUG_EXTRA_VERBOSE
         Serial.print("Armed tire ");
         Serial.print(tireIdx);
         Serial.print(" position ");
@@ -623,9 +815,9 @@ void MeasureTireTemps()
         armed = true;
       }
       // cancel button released, return
-      if (buttonReleased[1])
+      if (buttons[1].buttonReleased)
       {
-        buttonReleased[1] = false;
+        buttons[1].buttonReleased = false;
         return;
       }
       // check for stable temp and button release
@@ -634,7 +826,7 @@ void MeasureTireTemps()
       {
         if(armed)
         {
-          #ifdef VERBOSE_DEBUG
+          #ifdef DEBUG_EXTRA_VERBOSE
           Serial.print("Save temp tire ");
           Serial.print(tireIdx);
           Serial.print(" position ");
@@ -646,138 +838,166 @@ void MeasureTireTemps()
             measIdx = 0;
             break;
           }
-          currentTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 0;
+          tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 0;
           ResetTempStable();
           armed = false;
         }
       }
       else
       {
-        buttonReleased[0] = false;
+        buttons[0].buttonReleased = false;
       }
-      // if not stablized. sample temp every .5 second, check for stable temp
-      if(!tempStable && (curTime - priorTime) > 500)
+      // if not stablized. sample temp every .250 second, check for stable temp
+      if(!tempStable && (curTime - priorTime) > 250)
       {
         priorTime = curTime;
         curTime = millis();
         // read temp, check for stable temp, light LED if stable
         if(armed)
         {
-          currentTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
-          tempStable = CheckTempStable(currentTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx]);
+          #ifdef HAS_THERMO
+          tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
+          #else
+          tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 100;
+          #endif
+          tempStable = CheckTempStable(tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx]);
         }
         // text string location
         textPosition[0] = 5;
         textPosition[1] = 0;
-        oledDisplay.erase();
-        oledDisplay.setFont(demoFonts[1]);  
+        //oledDisplay.fillScreen(TFT_BLACK);
+        //oledDisplay.setFont(demoFonts[1]);  
         sprintf(outStr, "%s", cars[selectedCar].tireLongName[tireIdx].c_str());
-        oledDisplay.text(textPosition[0], textPosition[1], outStr);
-        textPosition[1] +=  oledDisplay.getStringHeight(outStr);
+        oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+        textPosition[1] +=  FONT_HEIGHT;
 
         for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
         {
-          if(currentTemps[(tireIdx * cars[selectedCar].positionCount) + tirePosIdx] > 0.0)
+          if(tireTemps[(tireIdx * cars[selectedCar].positionCount) + tirePosIdx] > 0.0)
           {
-            sprintf(outStr, "%s %s: %3.1F", cars[selectedCar].tireShortName[tireIdx].c_str(), 
+            sprintf(outStr, "%s %s:\t%3.1F", cars[selectedCar].tireShortName[tireIdx].c_str(), 
                                             cars[selectedCar].positionShortName[tirePosIdx].c_str(), 
-                                            currentTemps[(cars[selectedCar].positionCount * tireIdx) + tirePosIdx]);
+                                            tireTemps[(cars[selectedCar].positionCount * tireIdx) + tirePosIdx]);
           } 
           else
           {
-            sprintf(outStr, "%s %s: -----",  cars[selectedCar].tireShortName[tireIdx].c_str(),  
-                                             cars[selectedCar].positionShortName[tirePosIdx].c_str());
+            if(tirePosIdx == measIdx)
+            {
+              sprintf(outStr, "%s %s:\t****",  cars[selectedCar].tireShortName[tireIdx].c_str(),  
+                                               cars[selectedCar].positionShortName[tirePosIdx].c_str());
+            }
+            else
+            {
+              sprintf(outStr, "%s %s:",  cars[selectedCar].tireShortName[tireIdx].c_str(),  
+                                               cars[selectedCar].positionShortName[tirePosIdx].c_str());
+            }
           }
           if(tirePosIdx == measIdx)
           {
-            rectPosition[0] = 0;
-            rectPosition[1] = textPosition[1];
-            rectPosition[2] = oledDisplay.getWidth();// - 2;
-            rectPosition[3] = oledDisplay.getStringHeight("X");// - 5;            
-            oledDisplay.rectangleFill(rectPosition[0], rectPosition[1], rectPosition[2], rectPosition[3], COLOR_WHITE);
-            oledDisplay.text(textPosition[0], textPosition[1], outStr, COLOR_BLACK);
+            //rectPosition[0] = 0;
+            //rectPosition[1] = textPosition[1];
+            //rectPosition[2] = DISPLAY_WIDTH;
+            //rectPosition[3] = FONT_HEIGHT;
+            //oledDisplay.rectangleFill(rectPosition[0], rectPosition[1], rectPosition[2], rectPosition[3], TFT_WHITE);
+            oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
           }
           else
           {
-            oledDisplay.text(textPosition[0], textPosition[1], outStr, COLOR_WHITE);
+            oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
           }
-          textPosition[1] +=  oledDisplay.getStringHeight(outStr);
+          textPosition[1] +=  FONT_HEIGHT;
         }
-        oledDisplay.display();
+        //oledDisplay.display();
       }
     }
-    tireIdx++;
-  }
-  oledDisplay.erase();
-  textPosition[1] = 0;
-  oledDisplay.text(textPosition[0], textPosition[1], "Done");
-  textPosition[1] += oledDisplay.getStringHeight("X");
-  oledDisplay.text(textPosition[0], textPosition[1], "Updating results");
-  oledDisplay.display();
- 
-  // done, copy local to global
-  #ifdef HAS_RTC
-    if (rtc.updateTime() == false) 
-    {
-      Serial.print("RTC failed to update");
-    }
-    cars[selectedCar].dateTime = rtc.stringTime();
-    curTimeStr = rtc.stringTime();
-    curTimeStr += " ";
-    curTimeStr += rtc.stringDateUSA();
-    sprintf(outStr, "%s;%s;%d;%d", curTimeStr.c_str(), 
-                                   cars[selectedCar].carName.c_str(),
-                                   cars[selectedCar].tireCount, 
-                                   cars[selectedCar].positionCount);
-  #else
-    sprintf(outStr, "%d;%s;%d;%d", millis(), 
-                                   cars[selectedCar].carName.c_str(), 
-                                   cars[selectedCar].tireCount, 
-                                   cars[selectedCar].positionCount);
-  #endif
-  String fileLine = outStr;
-  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+{
+  for(int idxMeas = 0; idxMeas < cars[selectedCar].positionCount; idxMeas++)
   {
-    for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
-    {
-      tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition] = currentTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
-      fileLine += ';';
-      fileLine += tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
-    }
+    Serial.println(tireTemps[(idxTire * cars[selectedCar].positionCount) + idxMeas]);
   }
-  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
-  {
-    fileLine += ';';
-    fileLine += cars[selectedCar].tireShortName[idxTire];
-  }
-  for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
-  {
-    fileLine += ';';
-    fileLine += cars[selectedCar].positionShortName[idxPosition];
-  }
-  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
-  {
-    fileLine += ';';
-    fileLine += cars[selectedCar].maxTemp[idxTire];
-  }
-  #ifdef DEBUG_VERBOSE
-  Serial.println(fileLine);
-  Serial.println("Add to results file...");
-  #endif
-  
-  sprintf(outStr, "/py_temps_%d.txt", selectedCar);
-  
-  #ifdef DEBUG_VERBOSE
-  Serial.print("Write results to: ");
-  Serial.println(outStr);
-  #endif
-
-  AppendFile(SD, outStr/*"/py_temps.txt"*/, fileLine.c_str());
-  // update the HTML file
-  #ifdef DEBUG_VERBOSE
-  Serial.println("Update HTML file...");
-  #endif
-  WriteResultsHTML();  
+}
+Serial.println("End tire measurement");
+    //tireIdx++;
+  //}
+  //textPosition[1] = FONT_HEIGHT * 4;
+  //oledDisplay.drawString("Done", textPosition[0], textPosition[1], FONT_NUMBER);
+  //textPosition[1] += FONT_HEIGHT;
+  //oledDisplay.drawString("Updating results", textPosition[0], textPosition[1], FONT_NUMBER);
+  ////oledDisplay.display();
+ //
+  //// done, copy local to global
+  //#ifdef HAS_RTC
+  //  if (UpdateTime() == false) 
+  //  {
+  //    Serial.print("RTC failed to update");
+  //  }
+  //  curTimeStr = GetStringTime();//rtc.stringTime();
+  //  curTimeStr += " ";
+  //  curTimeStr += GetStringDate();//rtc.stringDateUSA();
+  //  //cars[selectedCar].dateTime = GetStringTime();// rtc.stringTime();
+  //  cars[selectedCar].dateTime = curTimeStr;// rtc.stringTime();
+  //  sprintf(outStr, "%s;%s;%d;%d", curTimeStr.c_str(), 
+  //                                 cars[selectedCar].carName.c_str(),
+  //                                 cars[selectedCar].tireCount, 
+  //                                 cars[selectedCar].positionCount);
+  //  #ifdef DEBUG_VERBOSE
+  //  Serial.print("MEASURE TIME ");
+  //  Serial.print(GetStringTime());
+  //  Serial.print(" DATE ");
+  //  Serial.print(GetStringDate());
+  //  Serial.print(" DATA/TIME stored ");
+  //  Serial.println(cars[selectedCar].dateTime);
+  //  #endif
+  //#else
+  //  sprintf(outStr, "%d;%s;%d;%d", millis(), 
+  //                                 cars[selectedCar].carName.c_str(), 
+  //                                 cars[selectedCar].tireCount, 
+  //                                 cars[selectedCar].positionCount);
+  //#endif
+  //String fileLine = outStr;
+  //for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  //{
+  //  for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
+  //  {
+  //    tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition] = currentTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
+  //    fileLine += ';';
+  //    fileLine += tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
+  //  }
+  //}
+  //for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  //{
+  //  fileLine += ';';
+  //  fileLine += cars[selectedCar].tireShortName[idxTire];
+  //}
+  //for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
+  //{
+  //  fileLine += ';';
+  //  fileLine += cars[selectedCar].positionShortName[idxPosition];
+  //}
+  //for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  //{
+  //  fileLine += ';';
+  //  fileLine += cars[selectedCar].maxTemp[idxTire];
+  //}
+  //#ifdef DEBUG_EXTRA_VERBOSE
+  //Serial.println(fileLine);
+  //Serial.println("Add to results file...");
+  //#endif
+  //
+  //sprintf(outStr, "/py_temps_%d.txt", selectedCar);
+  //
+  //#ifdef DEBUG_EXTRA_VERBOSE
+  //Serial.print("Write results to: ");
+  //Serial.println(outStr);
+  //#endif
+//
+  //AppendFile(SD, outStr, fileLine.c_str());
+  //// update the HTML file
+  //#ifdef DEBUG_EXTRA_VERBOSE
+  //Serial.println("Update HTML file...");
+  //#endif
+  //WriteResultsHTML();  
 }
 ///
 ///
@@ -789,41 +1009,43 @@ void InstantTemp()
   char outStr[128];
   float instant_temp = 0.0;
   int textPosition[2] = {5, 0};
+  randomSeed(100);
+  oledDisplay.fillScreen(TFT_BLACK);
+  YamuraBanner();
   while(true)
   {
     curTime = millis();
     if(curTime - priorTime > 1000)
     {
       priorTime = curTime;
-      // read temp, check for stable temp, light LED if stable
+      // read temp
+      #ifdef HAS_THERMO
       instant_temp = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
-      #ifdef VERBOSE_DEBUG
+      #else
+      instant_temp = 100.0F;
+      #endif
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.print("Instant temp ");
       Serial.println(instant_temp);
       #endif
       // text string location
       textPosition[0] = 5;
       textPosition[1] = 0;
-      oledDisplay.erase();
-      oledDisplay.setFont(demoFonts[1]);  
-      oledDisplay.text(textPosition[0], textPosition[1], "Temperature");
-      textPosition[1] +=  2 * oledDisplay.getStringHeight("X");
+      //oledDisplay.setFont(demoFonts[1]);  
+      oledDisplay.drawString("Temperature", textPosition[0], textPosition[1], FONT_NUMBER);
+      textPosition[1] +=  2 * FONT_HEIGHT;
       sprintf(outStr, "%0.2f", instant_temp);
-      oledDisplay.setFont(demoFonts[1]);  
-      oledDisplay.text(textPosition[0], textPosition[1], outStr);
-      oledDisplay.display();
+      //oledDisplay.setFont(demoFonts[1]);  
+      oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+      //oledDisplay.display();
     }
-    for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
-    {
-      buttonReleased[btnIdx] = false;
-      buttonArray[btnIdx].process(curTime);
-    }
+    CheckButtons(curTime);
     // any button released, exit
-    if ((buttonReleased[0]) || (buttonReleased[1]) || (buttonReleased[2]))
+    if ((buttons[0].buttonReleased) || (buttons[1].buttonReleased) || (buttons[2].buttonReleased))
     {
-      buttonReleased[0] = false;
-      buttonReleased[1] = false;
-      buttonReleased[2] = false;
+      buttons[0].buttonReleased = false;
+      buttons[1].buttonReleased = false;
+      buttons[2].buttonReleased = false;
       break;
     }
   }
@@ -831,81 +1053,525 @@ void InstantTemp()
 ///
 ///
 ///
-void DisplayTireTemps(CarSettings currentResultCar)
+//void DisplayTireTemps(CarSettings currentResultCar)
+//{
+//  unsigned long curTime = millis();
+//  unsigned long priorTime = millis();
+//  int textPosition[2] = {5, 0};
+//  //int rectPosition[4] = {0, 0, 0, 0};
+//  char outStr[255];
+//  char padStr[3];
+//  float maxTemp = 0.0F;
+//  oledDisplay.fillScreen(TFT_BLACK);
+//  while(true)
+//  {
+//    for(int idxTire = 0; idxTire < currentResultCar.tireCount; idxTire++)
+//    {
+//      maxTemp = 0.0F;
+//      for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
+//      {
+//        maxTemp = tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] > maxTemp ? tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] : maxTemp;
+//      }    
+//      textPosition[1] = 0;
+//      //oledDisplay.setFont(demoFonts[1]);  
+//      //oledDisplay.fillScreen(TFT_BLACK);
+//      sprintf(outStr, "%s %s", currentResultCar.tireShortName[idxTire].c_str(), 
+//                               currentResultCar.carName.c_str());
+//      oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+//      textPosition[1] +=  FONT_HEIGHT;
+//
+//      for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
+//      {
+//        if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= 100.0F)
+//        {
+//          padStr[0] = '\0';
+//        }
+//        else if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= 10.0F)
+//        {
+//          sprintf(padStr, " ");
+//        }
+//        else
+//        {
+//          sprintf(padStr, "  ");
+//        }
+//        sprintf(outStr, "%s: %s%3.1F %s", currentResultCar.positionShortName[tirePosIdx].c_str(), 
+//                                       padStr,
+//                                       tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx],
+//                                       tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= currentResultCar.maxTemp[idxTire] ? "*****" : " ");
+//        if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == maxTemp)
+//        {
+//            //rectPosition[0] = 0;
+//            //rectPosition[1] = textPosition[1];
+//            //rectPosition[2] = DISPLAY_WIDTH;
+//            //rectPosition[3] = FONT_HEIGHT;
+//            //oledDisplay.rectangleFill(rectPosition[0], rectPosition[1], rectPosition[2], rectPosition[3], TFT_WHITE);
+//            oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+//        }
+//        else
+//        {
+//          oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+//        }
+//        textPosition[1] +=  FONT_HEIGHT;
+//      }
+//      //oledDisplay.display();
+//      //CheckButtons(curTime);
+//      priorTime = curTime;
+//      //while(curTime - priorTime < 5000)
+//      while(true)
+//      {
+//        curTime = millis();
+//        CheckButtons(curTime);
+//        // select button released, go to next tire
+//        if (buttons[0].buttonReleased)
+//        {
+//          buttons[0].buttonReleased = false;
+//          break;
+//        }
+//        // cancel button released, return
+//        else if (buttons[1].buttonReleased)
+//        {
+//          buttons[1].buttonReleased = false;
+//          return;
+//        }
+//        else if ((buttons[2].buttonReleased) || (buttons[3].buttonReleased)) 
+//        {
+//          buttons[2].buttonReleased = false;
+//          buttons[3].buttonReleased = false;
+//        }
+//        delay(50);
+//      }
+//    }
+//  }
+//}
+///
+///
+///
+void DisplayAllTireTemps(CarSettings currentResultCar)
 {
   unsigned long curTime = millis();
   unsigned long priorTime = millis();
   int textPosition[2] = {5, 0};
+  //int rectPosition[4] = {0, 0, 0, 0};
   char outStr[255];
-  while(true)
-  {
+  char padStr[3];
+  float maxTemp = 0.0F;
+  float minTemp = 999.0F;
+  // initial clear of screen
+  int horz[4][2][2] = {{{  1, FONT_HEIGHT +   10},
+                        {475, FONT_HEIGHT +   10}},
+                       {{  1, FONT_HEIGHT +   80},
+                        {475, FONT_HEIGHT +   80}},
+                       {{  1, FONT_HEIGHT +  150},
+                        {475, FONT_HEIGHT +  150}},
+                       {{  1, FONT_HEIGHT +  220},
+                        {475, FONT_HEIGHT +  220}}};
+  int vert[3][2][2] = {{{  1, FONT_HEIGHT +  10},
+                        {  1, FONT_HEIGHT + 220}},
+                       {{237, FONT_HEIGHT +  10},
+                        {237, FONT_HEIGHT + 220}},                        
+                       {{475, FONT_HEIGHT +  10},
+                        {475, FONT_HEIGHT + 220}}};
+
+  oledDisplay.fillScreen(TFT_BLACK);
+  YamuraBanner();
+  //while(true)
+  //{
+    int col = 0;
+    int row = 0;
+    oledDisplay.drawWideLine(  horz[0][0][0], horz[0][0][1], horz[0][1][0], horz[0][1][1], 1, TFT_WHITE, TFT_BLACK);
+    oledDisplay.drawWideLine(  horz[1][0][0], horz[1][0][1], horz[1][1][0], horz[1][1][1], 1, TFT_WHITE, TFT_BLACK);
+    oledDisplay.drawWideLine(  horz[2][0][0], horz[2][0][1], horz[2][1][0], horz[2][1][1], 1, TFT_WHITE, TFT_BLACK);
+    oledDisplay.drawWideLine(  horz[3][0][0], horz[3][0][1], horz[3][1][0], horz[3][1][1], 1, TFT_WHITE, TFT_BLACK);
+
+    oledDisplay.drawWideLine(  vert[0][0][0], vert[0][0][1], vert[0][1][0], vert[0][1][1], 1, TFT_WHITE, TFT_BLACK);
+    oledDisplay.drawWideLine(  vert[1][0][0], vert[1][0][1], vert[1][1][0], vert[1][1][1], 1, TFT_WHITE, TFT_BLACK);
+    oledDisplay.drawWideLine(  vert[2][0][0], vert[2][0][1], vert[2][1][0], vert[2][1][1], 1, TFT_WHITE, TFT_BLACK);
+
+    sprintf(outStr, "%s %s", currentResultCar.carName.c_str(), currentResultCar.dateTime.c_str());
+    #ifdef DEBUG_VERBOSE
+    Serial.print("Results for car: ");
+    Serial.print(currentResultCar.carName.c_str());
+    Serial.print(" ");
+    Serial.print(" on ");
+    Serial.print(currentResultCar.dateTime.c_str());
+    Serial.print(" ");
+    Serial.println(outStr);
+    #endif
+    oledDisplay.drawString(outStr, 5, 0, FONT_NUMBER);
+
     for(int idxTire = 0; idxTire < currentResultCar.tireCount; idxTire++)
     {
-      textPosition[1] = 0;
-      oledDisplay.setFont(demoFonts[1]);  
-      oledDisplay.erase();
-	  // trim this to the max width of the display?
-      //sprintf(outStr, currentResultCar.dateTime.c_str());
-      //oledDisplay.text(textPosition[0], textPosition[1], outStr);
-      //textPosition[1] +=  oledDisplay.getStringHeight(outStr);
-      sprintf(outStr, "%s %s", currentResultCar.tireShortName[idxTire].c_str(), 
-                               currentResultCar.carName.c_str());
-      oledDisplay.text(textPosition[0], textPosition[1], outStr);
-      textPosition[1] +=  oledDisplay.getStringHeight(outStr);
-
+      col = (idxTire % 2);  // 0 or 1
+      row = (idxTire / 2);  // 0 (tires 0 and 1), 1 (tires 2 and 3), or 2  (tires 4 and 5)
+      textPosition[0] = vert[col][0][0] + 5;
+      textPosition[1] = horz[row][0][1] + 5;
+      //textPosition[1] = (row * 3) * FONT_HEIGHT;
+      maxTemp = 0.0F;
       for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
       {
-        sprintf(outStr, "%s: %3.1F", currentResultCar.positionLongName[tirePosIdx].c_str(), 
-                                     tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx]);
-        oledDisplay.text(textPosition[0], textPosition[1], outStr);
-        textPosition[1] +=  oledDisplay.getStringHeight(outStr);
-      }
-      oledDisplay.display();
-      curTime = millis();
-      priorTime = curTime;
-      while(curTime - priorTime < 5000)
+        maxTemp = tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] > maxTemp ? tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] : maxTemp;
+        minTemp = tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] < minTemp ? tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] : minTemp;
+      }    
+
+      textPosition[1] +=  FONT_HEIGHT;
+      int tirePosIdx = 0;
+      if(col == 0)
       {
-        curTime = millis();
-        for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+        tirePosIdx = 0;
+      }
+      else if(col == 1)
+      {
+        tirePosIdx = currentResultCar.positionCount - 1;
+      }
+      //for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
+      while(true)
+      {
+        if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= 100.0F)
         {
-          buttonReleased[btnIdx] = false;
-          buttonArray[btnIdx].process(curTime);
+          padStr[0] = '\0';
         }
-        // select button released, go to next tire
-        if (buttonReleased[0])
+        else if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= 10.0F)
         {
-          buttonReleased[0] = false;
-          buttonReleased[1] = false;
-          break;
+          sprintf(padStr, " ");
         }
-        // cancel button released, return
-        if (buttonReleased[1])
+        else
         {
-          buttonReleased[0] = false;
-          buttonReleased[1] = false;
-          return;
+          sprintf(padStr, "  ");
+        }
+        if(tirePosIdx == 0)
+        {
+          sprintf(outStr, "%s %s", currentResultCar.tireShortName[idxTire].c_str(),
+                                   currentResultCar.positionShortName[tirePosIdx].c_str());
+        }
+        else
+        {
+          sprintf(outStr, "%s", currentResultCar.positionShortName[tirePosIdx].c_str());
+        }
+        oledDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
+        oledDisplay.drawString(outStr, textPosition[0], textPosition[1] - FONT_HEIGHT, FONT_NUMBER);
+
+        sprintf(outStr, "%3.1F", tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx]);
+        if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == maxTemp)
+        {
+            oledDisplay.setTextColor(TFT_BLACK, TFT_RED);
+            oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+        }
+        else if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == minTemp)
+        {
+            oledDisplay.setTextColor(TFT_BLACK, TFT_BLUE);
+            oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+        }
+        else
+        {
+          oledDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
+          oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+        }
+        textPosition[0] +=  75;
+        if(col == 0)
+        {
+          tirePosIdx++;
+          if(tirePosIdx >= currentResultCar.positionCount)
+          {
+            break;
+          }
+        }
+        else if(col == 1)
+        {
+          tirePosIdx--;
+          if(tirePosIdx < 0)
+          {
+            break;
+          }
+        }   
+      }
+    }
+  //}
+  priorTime = curTime;
+  while(true)
+  {
+    curTime = millis();
+    CheckButtons(curTime);
+    // select button released, go to next tire
+    if (buttons[0].buttonReleased)
+    {
+      buttons[0].buttonReleased = false;
+      break;
+    }
+    // cancel button released, return
+    else if (buttons[1].buttonReleased)
+    {
+      buttons[1].buttonReleased = false;
+      break;
+    }
+    else if ((buttons[2].buttonReleased) || (buttons[3].buttonReleased)) 
+    {
+      buttons[2].buttonReleased = false;
+      buttons[3].buttonReleased = false;
+    }
+    delay(50);
+  }
+}
+//
+//
+//
+void MeasureAllTireTemps()
+{
+  // measure defined tires
+  //#ifdef DEBUG_VERBOSE
+  //sprintf(outStr, "Selected car %s (%d) tire count %d positions %d\n", cars[selectedCar].carName.c_str(), 
+  //                                                                     selectedCar, 
+  //                                                                     cars[selectedCar].tireCount, 
+  //                                                                     cars[selectedCar].positionCount);
+  unsigned long curTime = millis();
+  unsigned long priorTime = millis();
+  int textPosition[2] = {5, 0};
+  //int rectPosition[4] = {0, 0, 0, 0};
+  char outStr[255];
+  char padStr[3];
+  int selTire = 0;
+  bool startMeasure = false;
+  bool measureDone = false;
+
+  float maxTemp = 0.0F;
+  float minTemp = 999.0F;
+  // initial clear of screen
+  int horz[4][2][2] = {{{  1, FONT_HEIGHT +   10},
+                        {475, FONT_HEIGHT +   10}},
+                       {{  1, FONT_HEIGHT +   80},
+                        {475, FONT_HEIGHT +   80}},
+                       {{  1, FONT_HEIGHT +  150},
+                        {475, FONT_HEIGHT +  150}},
+                       {{  1, FONT_HEIGHT +  220},
+                        {475, FONT_HEIGHT +  220}}};
+  int vert[3][2][2] = {{{  1, FONT_HEIGHT +  10},
+                        {  1, FONT_HEIGHT + 220}},
+                       {{237, FONT_HEIGHT +  10},
+                        {237, FONT_HEIGHT + 220}},                        
+                       {{475, FONT_HEIGHT +  10},
+                        {475, FONT_HEIGHT + 220}}};
+
+  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  {
+    for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
+    {
+      tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] = 0.0F;
+    }
+  }
+
+  oledDisplay.fillScreen(TFT_BLACK);
+  YamuraBanner();
+  while(true)
+  {
+    Serial.print("Measure tire ");
+    Serial.print(selTire);
+    Serial.println(" or select another tire");
+
+    int col = 0;
+    int row = 0;
+    oledDisplay.drawWideLine(  horz[0][0][0], horz[0][0][1], horz[0][1][0], horz[0][1][1], 1, TFT_WHITE, TFT_BLACK);
+    oledDisplay.drawWideLine(  horz[1][0][0], horz[1][0][1], horz[1][1][0], horz[1][1][1], 1, TFT_WHITE, TFT_BLACK);
+    oledDisplay.drawWideLine(  horz[2][0][0], horz[2][0][1], horz[2][1][0], horz[2][1][1], 1, TFT_WHITE, TFT_BLACK);
+    oledDisplay.drawWideLine(  horz[3][0][0], horz[3][0][1], horz[3][1][0], horz[3][1][1], 1, TFT_WHITE, TFT_BLACK);
+
+    oledDisplay.drawWideLine(  vert[0][0][0], vert[0][0][1], vert[0][1][0], vert[0][1][1], 1, TFT_WHITE, TFT_BLACK);
+    oledDisplay.drawWideLine(  vert[1][0][0], vert[1][0][1], vert[1][1][0], vert[1][1][1], 1, TFT_WHITE, TFT_BLACK);
+    oledDisplay.drawWideLine(  vert[2][0][0], vert[2][0][1], vert[2][1][0], vert[2][1][1], 1, TFT_WHITE, TFT_BLACK);
+
+    sprintf(outStr, "%s", cars[selectedCar].carName.c_str());
+    #ifdef DEBUG_VERBOSE
+    Serial.print("Measuring car: ");
+    Serial.print(cars[selectedCar].carName.c_str());
+    Serial.println(outStr);
+    #endif
+    oledDisplay.drawString(outStr, 5, 0, FONT_NUMBER);
+
+    if(!startMeasure)
+    {
+      for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+      {
+        // done button
+        if(selTire < cars[selectedCar].tireCount)
+        {
+            oledDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
+        }
+        else
+        {
+            oledDisplay.setTextColor( TFT_WHITE, TFT_GREEN);
+        }
+        oledDisplay.drawString("Done", 237, FONT_HEIGHT + 240, FONT_NUMBER);
+        // tires
+        col = (idxTire % 2);  // 0 or 1
+        row = (idxTire / 2);  // 0 (tires 0 and 1), 1 (tires 2 and 3), or 2  (tires 4 and 5)
+        textPosition[0] = vert[col][0][0] + 5;
+        textPosition[1] = horz[row][0][1] + 5;
+        //textPosition[1] = (row * 3) * FONT_HEIGHT;
+        maxTemp = 0.0F;
+        minTemp = 999.0F;
+        for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
+        {
+          maxTemp = tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] > maxTemp ? tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] : maxTemp;
+          minTemp = tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] < minTemp ? tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] : minTemp;
+        }    
+        textPosition[1] +=  FONT_HEIGHT;
+        int tirePosIdx = 0;
+        if(col == 0)
+        {
+          tirePosIdx = 0;
+        }
+        else if(col == 1)
+        {
+          tirePosIdx = cars[selectedCar].positionCount - 1;
+        }
+        //for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
+        while(true)
+        {
+          if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] >= 100.0F)
+          {
+            padStr[0] = '\0';
+          }
+          else if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] >= 10.0F)
+          {
+            sprintf(padStr, " ");
+          }
+          else
+          {
+            sprintf(padStr, "  ");
+          }
+          if(tirePosIdx == 0)
+          {
+            sprintf(outStr, "%s %s", cars[selectedCar].tireShortName[idxTire].c_str(),
+                                   cars[selectedCar].positionShortName[tirePosIdx].c_str());
+          }
+          else
+          {
+            sprintf(outStr, "%s", cars[selectedCar].positionShortName[tirePosIdx].c_str());
+          }
+          if(idxTire == selTire)
+          {
+            oledDisplay.setTextColor( TFT_WHITE, TFT_GREEN);
+          }
+          else
+          {
+            oledDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
+          }
+          oledDisplay.drawString(outStr, textPosition[0], textPosition[1] - FONT_HEIGHT, FONT_NUMBER);
+          oledDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
+
+          sprintf(outStr, "%3.1F", tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx]);
+          //
+          if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] != 0.0F)
+          {
+            if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] >= maxTemp)
+            {
+              oledDisplay.setTextColor( TFT_BLACK, TFT_RED );
+            }
+            else if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] <= minTemp)
+            {
+              oledDisplay.setTextColor( TFT_BLACK, TFT_BLUE );
+            }
+            else
+            {
+              oledDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
+            }
+            oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+            oledDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
+          }
+          textPosition[0] +=  75;
+          if(col == 0)
+          {
+            tirePosIdx++;
+            if(tirePosIdx >= cars[selectedCar].positionCount)
+            {
+              break;
+            }
+          }
+          else if(col == 1)
+          {
+            tirePosIdx--;
+            if(tirePosIdx < 0)
+            {
+              break;
+            }
+          }   
         }
       }
+    }
+    // do measurements for tire
+    else
+    {
+      MeasureTireTemps(selTire);
+      startMeasure = false;
+      oledDisplay.fillScreen(TFT_BLACK);
+      YamuraBanner();
+      selTire++;
+      selTire = selTire <= cars[selectedCar].tireCount ? selTire : 0;
+      continue;
+    }
+//}
+    priorTime = curTime;
+    startMeasure = false;
+    measureDone = false;
+    while(true)
+    {
+      curTime = millis();
+      CheckButtons(curTime);
+      // select button released, go to next tire
+      if (buttons[0].buttonReleased)
+      {
+        if(selTire < cars[selectedCar].tireCount)
+        {
+Serial.println("Start MEARURE");
+          startMeasure = true;
+        }
+        else
+        {
+          measureDone = true;
+        }
+        buttons[0].buttonReleased = false;
+        break;
+      }
+      // cancel button released, return
+      else if (buttons[1].buttonReleased)
+      {
+Serial.println("Select NEXT tire");
+        selTire++;
+        selTire = selTire <= cars[selectedCar].tireCount ? selTire : 0;
+        buttons[1].buttonReleased = false;
+        break;
+      }
+      else if ((buttons[2].buttonReleased) || (buttons[3].buttonReleased)) 
+      {
+Serial.println("Select PRIOR tire");
+        selTire--;
+        selTire = selTire >= 0 ? selTire :  cars[selectedCar].tireCount;
+        buttons[2].buttonReleased = false;
+        buttons[3].buttonReleased = false;
+        break;
+      }
+      delay(50);
+    }
+    if(measureDone)
+    {
+      break;
     }
   }
 }
 //
 //
 //
-int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect, int maxWidth)
+int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect)
 {
   char outStr[256];
   int textPosition[2] = {5, 0};
-  int rectPosition[4] = {0, 0, 0, 0};
-  int charWidth = 0;
+  //int rectPosition[4] = {0, 0, 0, 0};
   unsigned long curTime = millis();
   int selection = initialSelect;
-  #ifdef VERBOSE_DEBUG
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.println("MenuSelect  choices");
   #endif
   for(int selIdx = 0; selIdx < menuCount; selIdx++)
   {
-    #ifdef VERBOSE_DEBUG
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.print(choices[selIdx].description);
     Serial.print(" - ");
     Serial.println(choices[selIdx].result);
@@ -918,136 +1584,116 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
   String selIndicator = " ";
   int displayRange[2] = {0, linesToDisplay - 1 };
   displayRange[1] = (menuCount < linesToDisplay ? menuCount : linesToDisplay) - 1;
+  #ifdef DEBUG_EXTRA_VERBOSE
+  Serial.print("Display range: ");
+  Serial.print(displayRange[0]);
+  Serial.print(" - ");
+  Serial.println(displayRange[1]);
+  #endif
   for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
   {
-    buttonReleased[btnIdx] = false;
+    buttons[btnIdx].buttonReleased = false;
   }
+  oledDisplay.fillScreen(TFT_BLACK);
+  YamuraBanner();
   while(true)
   {
     textPosition[0] = 5;
     textPosition[1] = 0;
-    oledDisplay.setFont(demoFonts[1]);  
-    oledDisplay.erase();
-    //oledDisplay.text(textPosition[0], textPosition[1], "Select:");
-    rectPosition[0] = 0;
-    rectPosition[2] = oledDisplay.getWidth() - 2;
-    rectPosition[3] = oledDisplay.getStringHeight("X") - 5;
-    charWidth = oledDisplay.getStringWidth("X");
-    #ifdef VERBOSE_DEBUG
-    Serial.print("Character width ");
-    Serial.print(charWidth);
-    Serial.print(" passed in max characters per line ");
-    Serial.print(maxWidth);
-    #endif
-    maxWidth = (oledDisplay.getWidth() / charWidth) - 3;
-    #ifdef VERBOSE_DEBUG
-    Serial.print(" calculated max characters per line ");
-    Serial.println(maxWidth);
-    Serial.print("Choice index 0");
-    Serial.print(" ");
-    Serial.println(menuCount);
-    Serial.print("Choice range ");
+    //oledDisplay.setFont(demoFonts[1]);  
+    //oledDisplay.fillScreen(TFT_BLACK);
+    //oledDisplay.drawString("Select:", textPosition[0], textPosition[1], FONT_NUMBER);
+    //rectPosition[0] = 0;
+    //rectPosition[2] = DISPLAY_WIDTH /*oledDisplay.getWidth()*/ - 2;
+    //rectPosition[3] = FONT_HEIGHT /*oledDisplay.getStringHeight("X")*/ - 5;
+    #ifdef DEBUG_EXTRA_VERBOSE
+    Serial.print("Draw Menu - Choices: ");
+    Serial.print(menuCount);
+    Serial.print(" Display Range: ");
     Serial.print(displayRange[0]);
-    Serial.print(" ");
-    Serial.println(displayRange[1]);
-    Serial.print("Selection ");
+    Serial.print(" - ");
+    Serial.print(displayRange[1]);
+    Serial.print(" Current Selection: ");
     Serial.print(selection);
-    Serial.print(" ");
-    Serial.println(choices[selection].description);
-    Serial.print("Selection box X ");
-    Serial.print(rectPosition[0]);
-    Serial.print(" Y ");
-    Serial.print(rectPosition[1]);
-    Serial.print(" W ");
-    Serial.print(rectPosition[2]);
-    Serial.print(" H ");
-    Serial.println(rectPosition[3]);
-    Serial.print("Screen W ");
-    Serial.print(oledDisplay.getWidth());
-    Serial.print(" H ");
-    Serial.println(oledDisplay.getHeight());
+    Serial.print(" (");
+    Serial.print(choices[selection].description);
+    Serial.println(")");
+    //Serial.print("Selection box X ");
+    //Serial.print(rectPosition[0]);
+    //Serial.print(" Y ");
+    //Serial.print(rectPosition[1]);
+    //Serial.print(" W ");
+    //Serial.print(rectPosition[2]);
+    //Serial.print(" H ");
+    //Serial.println(rectPosition[3]);
+    //Serial.print("Screen W ");
+    //Serial.print(DISPLAY_WIDTH/*oledDisplay.getWidth()*/);
+    //Serial.print(" H ");
+    //Serial.println(DISPLAY_HEIGHT/*oledDisplay.getHeight()*/);
     Serial.println("===========================================");
-    Serial.println("Menu:");
-    Serial.print("Display range ");
-    Serial.print(displayRange[0]);
-    Serial.print(" ");
-    Serial.println(displayRange[1]);
+    //Serial.println("Menu:");
     #endif
     for(int menuIdx = displayRange[0]; menuIdx <= displayRange[1]; menuIdx++)
     {
-      #ifdef VERBOSE_DEBUG
-      Serial.println(choices[menuIdx].description);
-      #endif
-      rectPosition[0] = 0;//textPosition[0];
-      rectPosition[1] = textPosition[1];
-      if(strlen(choices[menuIdx].description.c_str()) > maxWidth)
-      {
-        sprintf(outStr, "%s", choices[menuIdx].description.substring(0, maxWidth - 1).c_str());
-      }
-      else
-      {
-        sprintf(outStr, "%s", choices[menuIdx].description.c_str());
-      }
-      rectPosition[2] = oledDisplay.getStringWidth(outStr) + 10;
-      rectPosition[3] = oledDisplay.getStringHeight(outStr);
-      #ifdef VERBOSE_DEBUG
-      Serial.print(outStr);
-      #endif
+      //rectPosition[0] = textPosition[0];
+      //rectPosition[1] = textPosition[1];
+      sprintf(outStr, "%s", choices[menuIdx].description.c_str());
+      //rectPosition[2] = DISPLAY_WIDTH;
+      //rectPosition[3] = FONT_HEIGHT;
+      //#ifdef DEBUG_EXTRA_VERBOSE
+      //Serial.print(outStr);
+      //#endif
       if(menuIdx == selection)
       {
-        #ifdef VERBOSE_DEBUG
-        Serial.println(" SELECTED");
-        Serial.print("Selection box X ");
-        Serial.print(rectPosition[0]);
-        Serial.print(" Y ");
-        Serial.print(rectPosition[1]);
-        Serial.print(" W ");
-        Serial.print(rectPosition[2]);
-        Serial.print(" H ");
-        Serial.println(rectPosition[3]);
-        Serial.print("Screen W ");
-        Serial.print(oledDisplay.getWidth());
-        Serial.print(" H ");
-        Serial.print(oledDisplay.getHeight());
-        Serial.print(" Y bottom ");
-        Serial.println(rectPosition[1] + oledDisplay.getStringHeight("X"));
+        #ifdef DEBUG_EXTRA_VERBOSE
+        Serial.print("*");
         #endif
-        oledDisplay.rectangleFill(rectPosition[0], rectPosition[1], rectPosition[2], rectPosition[3], COLOR_WHITE);
-        oledDisplay.text(textPosition[0], textPosition[1], outStr, COLOR_BLACK);
+        //oledDisplay.rectangleFill(rectPosition[0], rectPosition[1], rectPosition[2], rectPosition[3], TFT_WHITE);
+        oledDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
+        oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
       }
       else
       {
-        #ifdef VERBOSE_DEBUG
-        Serial.println(" NOT SELECTED");
+        #ifdef DEBUG_EXTRA_VERBOSE
+        Serial.print(" ");
         #endif
-        oledDisplay.text(textPosition[0], textPosition[1], outStr, COLOR_WHITE);
+        oledDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+        oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
       }
-      textPosition[1] += oledDisplay.getStringHeight("X");
+      #ifdef DEBUG_EXTRA_VERBOSE
+      Serial.println(choices[menuIdx].description);
+      #endif
+      textPosition[1] += FONT_HEIGHT;
     }
-    #ifdef VERBOSE_DEBUG
-    Serial.println("displaying to OLED");
-    #endif
-    oledDisplay.display();
-    #ifdef VERBOSE_DEBUG
-    Serial.println("done");
-    #endif
+    //#ifdef DEBUG_EXTRA_VERBOSE
+    //Serial.println("displaying updated menu to OLED");
+    //#endif
+    //oledDisplay.display();
+    //#ifdef DEBUG_EXTRA_VERBOSE
+    //Serial.println("done");
+    //#endif
     while(true)
     {
       curTime = millis();
-      for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
-      {
-        buttonArray[btnIdx].process(curTime);
-      }
+      CheckButtons(curTime);
       // selection made, set state and break
-      if(buttonReleased[0])
+      if(buttons[0].buttonReleased)
       {
-        buttonReleased[0] = false;
+        buttons[0].buttonReleased = false;
+        #ifdef DEBUG_EXTRA_VERBOSE
+        Serial.print("Button 0 released, ");
+        Serial.print("Return selection ");
+        Serial.print(choices[selection].result);
+        #endif
         return choices[selection].result;
       }
       // change selection, break
-      else if(buttonReleased[1])
+      else if(buttons[1].buttonReleased)
       {
-        buttonReleased[1] = false;
+        #ifdef DEBUG_EXTRA_VERBOSE
+        Serial.print("Button 1 released, ");
+        #endif
+        buttons[1].buttonReleased = false;
         selection = (selection + 1) < menuCount ? (selection + 1) : 0;
         // handle loop back to start
         if (selection < displayRange[0])
@@ -1062,11 +1708,20 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
           displayRange[1] = selection; 
           displayRange[0] = displayRange[1] - linesToDisplay + 1;
         }
+        #ifdef DEBUG_EXTRA_VERBOSE
+        Serial.print("Change selection (down) to ");
+        Serial.print(selection);
+        Serial.print(" ");
+        Serial.println(choices[selection].result);
+        #endif
         break;
       }
-      else if(buttonReleased[2])
+      else if(buttons[2].buttonReleased)
       {
-        buttonReleased[2] = false;
+        #ifdef DEBUG_EXTRA_VERBOSE
+        Serial.print("Button 2 released, ");
+        #endif
+        buttons[2].buttonReleased = false;
         selection = (selection - 1) >= 0 ? (selection - 1) : menuCount - 1;
         // handle loop back to start
         if (selection < displayRange[0])
@@ -1081,11 +1736,29 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
           displayRange[1] = selection; 
           displayRange[0] = displayRange[1] - linesToDisplay + 1;
         }
+        #ifdef DEBUG_EXTRA_VERBOSE
+        Serial.print("Change selection (up) to ");
+        Serial.print(selection);
+        Serial.print(" ");
+        Serial.println(choices[selection].result);
+        #endif
         break;
+      }
+      else if(buttons[2].buttonReleased)
+      {
+        #ifdef DEBUG_EXTRA_VERBOSE
+        Serial.print("Button 3 released, no action");
+        #endif
       }
       delay(100);
     }
   }
+  #ifdef DEBUG_EXTRA_VERBOSE
+  Serial.print("Returning selection ");
+  Serial.print(selection);
+  Serial.print(" ");
+  Serial.println(choices[selection].result);
+  #endif
   return choices[selection].result;
 }
 //
@@ -1099,8 +1772,8 @@ void SelectCar()
     choices[idx].description = cars[idx].carName;
     choices[idx].result = idx; 
   }
-  selectedCar =  MenuSelect(choices, carCount, 4, 0, 19); 
-  #ifdef DEBUG_VERBOSE
+  selectedCar =  MenuSelect(choices, carCount, MAX_DISPLAY_LINES, 0); 
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.print("Selected car from SelectCar() ") ;
   Serial.print(selectedCar) ;
   Serial.print(" ") ;
@@ -1124,7 +1797,7 @@ void ChangeSettings()
     sprintf(buf, "Pass %s", pass);
     choices[4].description = buf;             choices[4].result = 4;
     choices[5].description = "Exit";          choices[5].result = 3;
-    result =  MenuSelect(choices, menuCount, 4, 0, 19); 
+    result =  MenuSelect(choices, menuCount, MAX_DISPLAY_LINES, 0); 
     switch(result)
     {
       case 0:
@@ -1149,7 +1822,7 @@ void SetUnits()
   int menuCount = 2;
   choices[0].description = "Temp in F";   choices[0].result = 0;
   choices[1].description = "Temp in C";   choices[1].result = 1;
-  int menuResult =  MenuSelect(choices, menuCount, 4, 0, 19); 
+  int menuResult =  MenuSelect(choices, menuCount, MAX_DISPLAY_LINES, 0); 
   // true for C, false for F
   tempUnits = menuResult == 1;
 }
@@ -1161,96 +1834,98 @@ void SetDateTime()
   char outStr[256];
   int timeVals[8] = {0, 0, 0, 0, 0, 0, 0, 0};  // date, month, year, day, hour, min, sec, 100ths
   bool isPM = false;
-  int textPosition[2] = {0, 0};
+  int textPosition[2] = {5, 0};
   int setIdx = 0;
   unsigned long curTime = millis();
   int delta = 0;
-  if (rtc.updateTime() == false) 
+  #ifndef HAS_RTC
+  oledDisplay.fillScreen(TFT_BLACK);
+  YamuraBanner();
+  oledDisplay.drawString("RTC not present", textPosition[0], textPosition[1], FONT_NUMBER);
+  delay(5000);
+  return;
+  #endif
+
+  if (UpdateTime() == false) 
   {
-    #ifdef VERBOSE_DEBUG
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.print("RTC failed to update");
     #endif
   }
-  timeVals[0] = rtc.getDate();
-  timeVals[1] = rtc.getMonth();
-  timeVals[2] = rtc.getYear() + 2000;
-  timeVals[3] = rtc.getWeekday();
-  timeVals[4] = rtc.getHours();
-  timeVals[5] = rtc.getMinutes();
-  isPM = rtc.isPM();
-  
+  timeVals[DATE] = rtc.getDate();
+  timeVals[MONTH] = rtc.getMonth(century);
+  if (century) 
+  {
+    timeVals[YEAR] += 100;
+	}
+  timeVals[DAY] = rtc.getDoW();
+  timeVals[HOUR] = rtc.getHour(h12Flag, isPM);
+  timeVals[MINUTE] = rtc.getMinute();
+  //isPM = rtc.isPM();
+  #ifdef DEBUG_EXTRA_VERBOSE
+  Serial.print("GET Date/Time DATE: ");
+  Serial.print(timeVals[DATE]);
+  Serial.print(" MONTH: ");
+  Serial.print(timeVals[MONTH]);
+  Serial.print(" DAY OF WEEK: ");
+  Serial.print(timeVals[DAY]);
+  Serial.print(" YEAR: ");
+  Serial.print(timeVals[YEAR]);
+  Serial.print(" HOUR: ");
+  Serial.print(timeVals[HOUR]);
+  Serial.print(" MINUTE: ");
+  Serial.print(timeVals[MINUTE]);
+  Serial.print(" AM/PM: ");
+  Serial.print(isPM ? "PM" : "AM");
+  Serial.println();
+  #endif
   for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
   {
-    buttonReleased[btnIdx] = false;
+    buttons[btnIdx].buttonReleased = false;
   }
   while(true)
   {
     textPosition[0] = 5;
     textPosition[1] = 0;
-    oledDisplay.erase();
-    oledDisplay.setFont(demoFonts[1]);  
-    oledDisplay.text(textPosition[0], textPosition[1], "Set date/time");
+    oledDisplay.fillScreen(TFT_BLACK);
+    YamuraBanner();
+    //oledDisplay.setFont(demoFonts[1]);  
+    oledDisplay.drawString("Set date/time", textPosition[0], textPosition[1], FONT_NUMBER);
     
-    textPosition[1] += oledDisplay.getStringHeight("X");
+    textPosition[1] += FONT_HEIGHT; //oledDisplay.getStringHeight("X");
 
-    sprintf(outStr, "%02d/%02d/%04d ", timeVals[0], timeVals[1], timeVals[2]);
-    switch(timeVals[3])
-    {
-      case 2:
-        strcat(outStr, "M");
-        break;
-      case 3:
-        strcat(outStr, "Tu");
-        break;
-      case 4:
-        strcat(outStr, "W");
-        break;
-      case 5:
-        strcat(outStr, "Th");
-        break;
-      case 6:
-        strcat(outStr, "F");
-        break;
-      case 0:
-        strcat(outStr, "Sa");
-        break;
-      case 1:
-        strcat(outStr, "Su");
-        break;
-      default:
-        strcat(outStr, "--");
-        break;
-    }
-    oledDisplay.text(textPosition[0], textPosition[1], outStr);
+    sprintf(outStr, "%02d/%02d/%04d %s", timeVals[DATE], timeVals[MONTH], timeVals[YEAR], days[timeVals[DAY]]);
+    oledDisplay.drawString(outStr,textPosition[0], textPosition[1], FONT_NUMBER);
     if(setIdx < 4)
     {
-      textPosition[1] += oledDisplay.getStringHeight(outStr);;
-      sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "--" : "  "), (setIdx == 1 ? "--" : "  "), (setIdx == 2 ? "----" : "    "), (setIdx == 3 ? "--" : "  "));
-      oledDisplay.text(textPosition[0], textPosition[1], outStr);
+      textPosition[1] += FONT_HEIGHT; //*oledDisplay.getStringHeight(outStr)
+      sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "dd" : "  "), (setIdx == 1 ? "mm" : "  "), (setIdx == 2 ? "yyyy" : "    "), (setIdx == 3 ? "ww" : "  "));
+      oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
     }
-    textPosition[1] += oledDisplay.getStringHeight(outStr);;
-    sprintf(outStr, "%02d:%02d %s", timeVals[4], timeVals[5], (isPM ? "PM" : "AM"));
-    oledDisplay.text(textPosition[0], textPosition[1], outStr);
+    textPosition[1] += FONT_HEIGHT;// oledDisplay.getStringHeight(outStr)
+    sprintf(outStr, "%02d:%02d %s", timeVals[HOUR], timeVals[MINUTE], (isPM ? "PM" : "AM"));
+    oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
     if(setIdx > 3)
     {
-      textPosition[1] += oledDisplay.getStringHeight(outStr);;
-      sprintf(outStr, "%s %s %s", (setIdx == 4 ? "--" : "  "), (setIdx == 5 ? "--" : "  "), (setIdx == 6 ? "--" : "  "));
-      oledDisplay.text(textPosition[0], textPosition[1], outStr);
+      textPosition[1] += FONT_HEIGHT; //oledDisplay.getStringHeight(outStr)
+      sprintf(outStr, "%s %s %s", (setIdx == 4 ? "hh" : "  "), (setIdx == 5 ? "mm" : "  "), (setIdx == 6 ? "ap" : "  "));
+      oledDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
     }
     
-    oledDisplay.display();
-    while(!buttonReleased[0])
+    //oledDisplay.display();
+    while(!buttons[0].buttonReleased)
     {
       curTime = millis();
-      for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
-      {
-        buttonReleased[btnIdx] = false;
-        buttonArray[btnIdx].process(curTime);
-      }
+      CheckButtons(curTime);
+      //for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+      //{
+      //  buttonReleased[btnIdx] = false;
+      //  buttonArray[btnIdx].process(curTime);
+      //}
       // save time element, advance
-      if(buttonReleased[0])
+      if(buttons[0].buttonReleased)
       {
-        buttonReleased[0] = false;
+        buttons[0].buttonReleased = false;
         setIdx++;
         if(setIdx > 6)
         {
@@ -1258,14 +1933,14 @@ void SetDateTime()
         }
       }
       // increase/decrease
-      else if(buttonReleased[1])
+      else if(buttons[1].buttonReleased)
       {
-        buttonReleased[1] = false;
+        buttons[1].buttonReleased = false;
         delta = -1;
       }
-      else if(buttonReleased[2])
+      else if(buttons[2].buttonReleased)
       {
-        buttonReleased[2] = false;
+        buttons[2].buttonReleased = false;
         delta = 1;
       }
       else
@@ -1276,69 +1951,69 @@ void SetDateTime()
       switch (setIdx)
       {
         case 0:  // date
-          timeVals[0] += delta;
-          if(timeVals[0] <= 0)
+          timeVals[DATE] += delta;
+          if(timeVals[DATE] <= 0)
           {
-            timeVals[0] = 31;
+            timeVals[DATE] = 31;
           }
-          if(timeVals[0] > 31)
+          if(timeVals[DATE] > 31)
           {
-            timeVals[0] = 1;
+            timeVals[DATE] = 1;
           }
           break;
         case 1:  // month
-          timeVals[1] += delta;
-          if(timeVals[1] <= 0)
+          timeVals[MONTH] += delta;
+          if(timeVals[MONTH] <= 0)
           {
-            timeVals[1] = 12;
+            timeVals[MONTH] = 12;
           }
-          if(timeVals[1] > 12)
+          if(timeVals[MONTH] > 12)
           {
-            timeVals[1] = 1;
+            timeVals[MONTH] = 1;
           }
           break;
         case 2:  // year
-          if(timeVals[2] < 2020)
+          if(timeVals[YEAR] < 2020)
           {
-            timeVals[2] = 2020;
+            timeVals[YEAR] = 2020;
           }
-          if(timeVals[2] > 2100)
+          if(timeVals[YEAR] > 2100)
           {
-            timeVals[2] = 2020;
+            timeVals[YEAR] = 2020;
           }
-          timeVals[2] += delta;
+          timeVals[YEAR] += delta;
           break;
         case 3:  // day
-          timeVals[3] += delta;
-          if(timeVals[3] < 0)
+          timeVals[DAY] += delta;
+          if(timeVals[DAY] < 0)
           {
-            timeVals[3] = 6;
+            timeVals[DAY] = 6;
           }
-          if(timeVals[3] > 6)
+          if(timeVals[DAY] > 6)
           {
-            timeVals[3] = 0;
+            timeVals[DAY] = 0;
           }
           break;
         case 4:  // hour
-          timeVals[4] += delta;
-          if(timeVals[4] < 0)
+          timeVals[HOUR] += delta;
+          if(timeVals[HOUR] < 0)
           {
-            timeVals[4] = 12;
+            timeVals[HOUR] = 12;
           }
-          if(timeVals[4] > 12)
+          if(timeVals[HOUR] > 12)
           {
-            timeVals[4] = 1;
+            timeVals[HOUR] = 1;
           }
           break;
         case 5:  // minute
-          timeVals[5] += delta;
-          if(timeVals[5] < 0)
+          timeVals[MINUTE] += delta;
+          if(timeVals[MINUTE] < 0)
           {
-            timeVals[5] = 59;
+            timeVals[MINUTE] = 59;
           }
-          if(timeVals[5] > 59)
+          if(timeVals[MINUTE] > 59)
           {
-            timeVals[5] = 0;
+            timeVals[MINUTE] = 0;
           }
           break;
         case 6:  // am/pm
@@ -1357,20 +2032,53 @@ void SetDateTime()
   }
   if(isPM)
   {
-    rtc.set24Hour();
-    if (timeVals[4] < 12)
+    //rtc.set24Hour();
+    if (timeVals[HOUR] < 12)
     {
-      timeVals[4] += 12;
+      timeVals[HOUR] += 12;
     }
   }
-  //              hund,        sec,          min,         hour,        date         month,       year,        day
-  if(!rtc.setTime(timeVals[6], timeVals[7],  timeVals[5], timeVals[4], timeVals[0], timeVals[1], timeVals[2], timeVals[3]))
+  #ifdef DEBUG_EXTRA_VERBOSE
+  Serial.print("SET Date/Time DATE: ");
+  Serial.print(timeVals[DATE]);
+  Serial.print(" MONTH: ");
+  Serial.print(timeVals[MONTH]);
+  Serial.print(" DAY OF WEEK: ");
+  Serial.print(timeVals[DAY]);
+  Serial.print(" YEAR: ");
+  Serial.print(timeVals[YEAR]);
+  Serial.print(" HOUR: ");
+  Serial.print(timeVals[HOUR]);
+  Serial.print(" MINUTE: ");
+  Serial.print(timeVals[MINUTE]);
+  Serial.print(" AM/PM: ");
+  Serial.print(isPM ? "PM" : "AM");
+  Serial.println();
+  #endif
+  if (century) 
   {
-    //#ifdef DEBUG_VERBOSE
-    Serial.println("Set time failed");
-    //#endif
+    rtc.setYear(timeVals[YEAR] - 2100);
+	}
+  else
+  {
+    rtc.setYear(timeVals[YEAR] - 2000);
   }
-  rtc.set12Hour();
+  rtc.setMonth(timeVals[MONTH]);
+  rtc.setDate(timeVals[DATE]);
+  rtc.setDoW(timeVals[DAY]);
+  rtc.setHour(timeVals[HOUR]);
+  rtc.setMinute(timeVals[MINUTE]);
+  rtc.setSecond(timeVals[SECOND]);
+  rtc.setClockMode(isPM);
+ // {
+   // #ifdef DEBUG_EXTRA_VERBOSE
+   // Serial.println("Set time failed");
+   // #endif
+  //}
+  //rtc.set12Hour();
+  textPosition[1] += FONT_HEIGHT * 2;
+  oledDisplay.drawString(GetStringTime(), textPosition[0], textPosition[1], FONT_NUMBER);
+  delay(5000);
 }
 //
 //
@@ -1380,7 +2088,7 @@ void DeleteDataFile()
   int menuCount = 2;
   choices[0].description = "Yes";      choices[0].result = 1;
   choices[1].description = "No";   choices[1].result = 0;
-  int menuResult = MenuSelect (choices, menuCount, 4, 1, 19); 
+  int menuResult = MenuSelect (choices, menuCount, MAX_DISPLAY_LINES, 1); 
   if(menuResult == 1)
   {
     #ifdef DEBUG_HTML
@@ -1393,13 +2101,13 @@ void DeleteDataFile()
       sprintf(nameBuf, "/py_temps_%d.txt", dataIdx);
       if(!SD.exists(nameBuf))
       {
-        #ifdef DEBUG_VERBOSE
+        #ifdef DEBUG_EXTRA_VERBOSE
         Serial.print(nameBuf);
         Serial.println(" does not exist");
         #endif
         continue;
       }
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.print(nameBuf);
       Serial.println(" deleted");
       #endif
@@ -1407,7 +2115,7 @@ void DeleteDataFile()
     }
     DeleteFile(SD, "/py_res.html");
     // create the HTML header
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.println("Write empty html");
     #endif
     WriteResultsHTML();
@@ -1453,7 +2161,7 @@ void ResetTempStable()
 //
 void ReadSetupFile(fs::FS &fs, const char * path)
 {
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.print("Read setup file ");
   Serial.println(path);
   Serial.printf("Reading file: %s\n", path);
@@ -1461,7 +2169,7 @@ void ReadSetupFile(fs::FS &fs, const char * path)
   File file = fs.open(path, FILE_READ);
   if(!file)
   {
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.println("Failed to open file for reading");
     #endif
     return;
@@ -1512,7 +2220,7 @@ void ReadSetupFile(fs::FS &fs, const char * path)
   }
   selectedCar = 0;
   file.close();
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.println();
   Serial.println("Cars Structure:");
   Serial.println("===============");
@@ -1554,13 +2262,13 @@ void ReadSetupFile(fs::FS &fs, const char * path)
 //
 void WriteSetupFile(fs::FS &fs, const char * path)
 {
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.printf("Writing setup file: %s\n", path);
   #endif
   File file = fs.open(path, FILE_WRITE);
   if(!file)
   {
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.println("Failed to open file for writing");
     #endif
     return;
@@ -1568,11 +2276,11 @@ void WriteSetupFile(fs::FS &fs, const char * path)
   file.println("5");            // number of cars
   file.println("Brian Z4");    // car
   file.println("4");           // wheels
-  file.println("RF");
-  file.println("Right Front");
-  file.println("110.0");
   file.println("LF");
   file.println("Left Front");
+  file.println("110.0");
+  file.println("RF");
+  file.println("Right Front");
   file.println("110.0");
   file.println("LR");
   file.println("Left Rear");
@@ -1591,12 +2299,12 @@ void WriteSetupFile(fs::FS &fs, const char * path)
   file.println("Mark MR2");    // car
   file.println("4");           // wheels
   file.println("RF");
-  file.println("Right Front");
-  file.println("110.0");
-  file.println("LF");
   file.println("Left Front");
   file.println("110.0");
   file.println("LR");
+  file.println("Right Front");
+  file.println("110.0");
+  file.println("LF");
   file.println("Left Rear");
   file.println("110.0");
   file.println("RR");
@@ -1612,17 +2320,17 @@ void WriteSetupFile(fs::FS &fs, const char * path)
   file.println("=========="); 
   file.println("Jody P34");    // car
   file.println("6");           // wheels
+  file.println("LF");
+  file.println("Left Front");
+  file.println("110.0");
   file.println("RF");
   file.println("Right Front");
   file.println("110.0");
   file.println("RM");
-  file.println("Right Mid");
-  file.println("110.0");
-  file.println("LF");
-  file.println("Left Front");
-  file.println("110.0");
   file.println("LM");
   file.println("Left Mid");
+  file.println("110.0");
+  file.println("Right Mid");
   file.println("110.0");
   file.println("LR");
   file.println("Left Rear");
@@ -1656,11 +2364,11 @@ void WriteSetupFile(fs::FS &fs, const char * path)
   file.println("=========="); 
   file.println("Nigel Super3");    // car
   file.println("3");           // wheels
-  file.println("RF");
-  file.println("Right Front");
-  file.println("110.0");
   file.println("LF");
   file.println("Left Front");
+  file.println("110.0");
+  file.println("RF");
+  file.println("Right Front");
   file.println("110.0");
   file.println("R");
   file.println("Rear");
@@ -1675,7 +2383,7 @@ void WriteSetupFile(fs::FS &fs, const char * path)
   file.println("=========="); 
 
   file.close();
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.println("File written");
   #endif
 }
@@ -1694,12 +2402,20 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
   int tireNameRange[2] = {99, 99};
   int posNameRange[2] = {99, 99};
   char* token;
-  File file = SD.open("/py_temps.txt", FILE_READ);
+  File file = SD.open(path, FILE_READ);
   if(!file)
   {
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.println("Failed to open file for reading");
     #endif
+    oledDisplay.fillScreen(TFT_BLACK);
+    YamuraBanner();
+    //oledDisplay.setFont(demoFonts[1]);  
+    oledDisplay.drawString("No results for", 5, 0,  FONT_NUMBER);
+    oledDisplay.drawString(cars[selectedCar].carName.c_str(), 5, FONT_HEIGHT, FONT_NUMBER);
+    oledDisplay.drawString("Select another car", 5, 2* FONT_HEIGHT, FONT_NUMBER);
+    //oledDisplay.display();
+    delay(5000);
     return;
   }
   int menuCnt = 0;
@@ -1710,19 +2426,34 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     {
       break;
     }
-    choices[menuCnt].description = buf;      choices[menuCnt].result = menuCnt;
+    token = strtok(buf, ";");
+    #ifdef DEBUG_EXTRA_VERBOSE
+    Serial.print("result (");
+    Serial.print(menuCnt);
+    Serial.print(") ");
+    Serial.println(token);
+    #endif
+    choices[menuCnt].description = token;      choices[menuCnt].result = menuCnt;
     menuCnt++;
   }
-  int menuResult = MenuSelect(choices, menuCnt, 4, 0, 19);
+  int menuResult = MenuSelect(choices, menuCnt, MAX_DISPLAY_LINES, 0);
   file.close();
   // at this point, we need to parse the selected line and add to a measurment structure for display
   // get to the correct line
-  file = SD.open("/py_temps.txt", FILE_READ);
+  file = SD.open(path, FILE_READ);
   if(!file)
   {
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.println("Failed to open file for reading");
     #endif
+    oledDisplay.fillScreen(TFT_BLACK);
+    YamuraBanner();
+    //oledDisplay.setFont(demoFonts[1]);  
+    oledDisplay.drawString("No results for", 5, 0, FONT_NUMBER);
+    oledDisplay.drawString(cars[selectedCar].carName.c_str(), 5, FONT_HEIGHT, FONT_NUMBER);
+    oledDisplay.drawString("Select another car", 5, 2* FONT_HEIGHT, FONT_NUMBER);
+    //oledDisplay.display();
+    delay(5000);
     return;
   }
   for (int lineNumber = 0; lineNumber <= menuResult; lineNumber++)
@@ -1731,7 +2462,7 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
   } 
   file.close();
   ParseResult(buf, currentResultCar);
-  DisplayTireTemps(currentResultCar);
+  DisplayAllTireTemps(currentResultCar);
 }
 //
 // write HTML display file
@@ -1770,7 +2501,7 @@ void WriteResultsHTML()
   // create a new HTML file
   if(!SD.remove("/py_res.html"))
   {
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.print("failed to delete /py_res.html");
     #endif
   }
@@ -1795,14 +2526,16 @@ void WriteResultsHTML()
     fileIn = SD.open(nameBuf, FILE_READ);
     if(!fileIn)
     {
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.print(nameBuf);
       Serial.println(" failed to open for reading");
       #endif
       continue;
     }
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.print(nameBuf);
     Serial.println(" opened for reading");
+    #endif
     bool outputSubHeader = true;
     while(true)
     {
@@ -1832,20 +2565,20 @@ void WriteResultsHTML()
         AppendFile(SD, "/py_res.html", "        </tr>");
       }
       outputSubHeader = false;
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.println("begin new row");
       #endif
       rowCount++;
       AppendFile(SD, "/py_res.html", "		    <tr>");
       sprintf(buf, "<td>%s</td>", currentResultCar.dateTime.c_str());
       AppendFile(SD, "/py_res.html", buf);
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.print("date time ");
       Serial.println(buf);
       #endif
       sprintf(buf, "<td>%s</td>", currentResultCar.carName.c_str());
       AppendFile(SD, "/py_res.html", buf);
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.print("car ");
       Serial.println(buf);
       #endif
@@ -1854,7 +2587,7 @@ void WriteResultsHTML()
         tireMin =  999.9;
         tireMax = -999.9;
         //sprintf(buf, "<td>%s</td>", currentResultCar.tireShortName[t_idx].c_str());
-        #ifdef DEBUG_VERBOSE
+        #ifdef DEBUG_EXTRA_VERBOSE
         Serial.print("tire ");
         Serial.println(buf);
         #endif
@@ -1865,7 +2598,7 @@ void WriteResultsHTML()
           tireMin = tireMin < tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] ? tireMin : tireTemps[(t_idx * currentResultCar.positionCount) + p_idx];
           tireMax = tireMax > tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] ? tireMax : tireTemps[(t_idx * currentResultCar.positionCount) + p_idx];
         }
-        #ifdef DEBUG_VERBOSE
+        #ifdef DEBUG_EXTRA_VERBOSE
         Serial.print("tire temp range ");
         Serial.print(tireMin);
         Serial.print(" - ");
@@ -1896,7 +2629,7 @@ void WriteResultsHTML()
             //sprintf(buf, "<td>%s %0.2f</td>", currentResultCar.positionShortName[p_idx].c_str(), tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
             sprintf(buf, "<td>%0.2f</td>", /*currentResultCar.positionShortName[p_idx].c_str(),*/ tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
           }
-          #ifdef DEBUG_VERBOSE
+          #ifdef DEBUG_EXTRA_VERBOSE
           Serial.print("tire ");
           Serial.print(t_idx);
           Serial.print("position ");
@@ -1907,7 +2640,7 @@ void WriteResultsHTML()
           AppendFile(SD, "/py_res.html", buf);
         }
       }
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.println("end of row");
       #endif
       AppendFile(SD, "/py_res.html", "		    </tr>");
@@ -1915,20 +2648,20 @@ void WriteResultsHTML()
   }
   if(rowCount == 0)
   {
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.println("empty data file - begin blank row");
     #endif
     rowCount++;
     AppendFile(SD, "/py_res.html", "		    <tr>");
     sprintf(buf, "<td>---</td>");
     AppendFile(SD, "/py_res.html", buf);
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.print("date time ");
     Serial.println(buf);
     #endif
     sprintf(buf, "<td>---</td>");
     AppendFile(SD, "/py_res.html", buf);
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.print("car ");
     Serial.println(buf);
     #endif
@@ -1937,7 +2670,7 @@ void WriteResultsHTML()
       tireMin =  999.9;
       tireMax = -999.9;
       sprintf(buf, "<td>---</td>");
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.print("tire ");
       Serial.println(buf);
       #endif
@@ -1949,12 +2682,12 @@ void WriteResultsHTML()
         AppendFile(SD, "/py_res.html", buf);
       }
     }
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.println("end of row");
     #endif
     AppendFile(SD, "/py_res.html", "		    </tr>");
   }
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.println("end of file");
   #endif
   fileIn.close();
@@ -2015,7 +2748,7 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
   token = strtok(buf, ";");
   while(token != NULL)
   {
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.print("Current token ");
     Serial.print(tokenIdx);
     Serial.print(" >>>>");
@@ -2027,7 +2760,7 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
     if(tokenIdx == 0)
     {
       currentResultCar.dateTime = token;      
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.println("Timestamp");
       #endif
     }
@@ -2035,7 +2768,7 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
     if(tokenIdx == 1)
     {
       currentResultCar.carName = token;
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.println(" car");
       #endif
     }
@@ -2046,7 +2779,7 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
       currentResultCar.tireShortName = new String[currentResultCar.tireCount];
       currentResultCar.tireLongName = new String[currentResultCar.tireCount];
       currentResultCar.maxTemp = (float*)calloc(currentResultCar.tireCount, sizeof(float));
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.println(" tires");
       #endif
     }
@@ -2065,7 +2798,7 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
       posNameRange[1]  = posNameRange[0] + currentResultCar.positionCount;                                    // < 21 + 3 (24)
       maxTempRange[0]  = posNameRange[1];                                                                    // >= 21
       maxTempRange[1]  = maxTempRange[0] + currentResultCar.tireCount;                                    // < 21 + 3 (24)
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.println(" positions");
       #endif
     }
@@ -2074,7 +2807,7 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
     {
       tireTemps[measureIdx] = atof(token);
       currentTemps[measureIdx] = tireTemps[measureIdx];
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.print(" tireTemps[");
       Serial.print(measureIdx);
       Serial.print("] = ");
@@ -2087,7 +2820,7 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
     {
       currentResultCar.tireShortName[tireIdx] = token;
       currentResultCar.tireLongName[tireIdx] = token;
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.println(" tire name");
       #endif
       tireIdx++;
@@ -2098,7 +2831,7 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
       currentResultCar.positionShortName[positionIdx] = token;
       currentResultCar.positionLongName[positionIdx] = token;
       positionIdx++;
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.println(" position name");
       #endif
     }
@@ -2107,7 +2840,7 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
     {
       currentResultCar.maxTemp[maxTempIdx] = atof(token);
       maxTempIdx++;
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.println(" max temp value");
       #endif
     }
@@ -2142,7 +2875,7 @@ void ReadLine(File file, char* buf)
     bufIdx++;
     buf[bufIdx] = '\0';
   } while (c != 0x10);
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.println(buf);
   #endif
   return;
@@ -2152,20 +2885,20 @@ void ReadLine(File file, char* buf)
 //
 void AppendFile(fs::FS &fs, const char * path, const char * message)
 {
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.printf("Appending to file: %s\n", path);
   #endif
   File file = fs.open(path, FILE_APPEND);
   if(!file)
   {
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.println("Failed to open file for appending");
     #endif
     return;
   }
   if(file.println(message))
   {
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.println("Message appended");
     #endif
     #ifdef DEBUG_HTML
@@ -2175,7 +2908,7 @@ void AppendFile(fs::FS &fs, const char * path, const char * message)
   }
   else 
   {
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.println("Append failed");
     #endif
   }
@@ -2186,68 +2919,28 @@ void AppendFile(fs::FS &fs, const char * path, const char * message)
 //
 void DeleteFile(fs::FS &fs, const char * path)
 {
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.printf("Deleting file: %s\n", path);
   #endif
   if(fs.remove(path))
   {
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.println("File deleted");
     #endif
   }
   else 
   {
-    #ifdef DEBUG_VERBOSE
+    #ifdef DEBUG_EXTRA_VERBOSE
     Serial.println("Delete failed");
     #endif
   }
-}
-//
-// handle pressed state
-//
-void button_pressedCallback(uint8_t pinIn)
-{
-  for(int buttonIdx = 0; buttonIdx < BUTTON_COUNT; buttonIdx++)
-  {
-    if(buttonPin[buttonIdx] == pinIn)
-    {
-      buttonReleased[buttonIdx] = false;
-      break;
-    }
-  }
-}
-//
-// handle released state
-//
-void button_releasedCallback(uint8_t pinIn)
-{
-  for(int buttonIdx = 0; buttonIdx < BUTTON_COUNT; buttonIdx++)
-  {
-    if(buttonPin[buttonIdx] == pinIn)
-    {
-      buttonReleased[buttonIdx] = true;
-      break;
-    }
-  }
-}
-//
-// handle pressed duration
-//
-void button_pressedDurationCallback(uint8_t pinIn, unsigned long duration)
-{ 
-}
-//
-// handle released duration
-//
-void button_releasedDurationCallback(uint8_t pinIn, unsigned long duration)
-{
 }
 //
 //
 //
 void handleRoot(AsyncWebServerRequest *request) 
 {
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.println("send HOMEPAGE");
   #endif
   //digitalWrite(GREEN_LED, HIGH);
@@ -2277,14 +2970,14 @@ void onServoInputWebSocketEvent(AsyncWebSocket *server,
   switch (type) 
   {
     case WS_EVT_CONNECT:
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
       #endif
       //digitalWrite(GREEN_LED, HIGH);
       //digitalWrite(RED_LED, LOW);
       break;
     case WS_EVT_DISCONNECT:
-      #ifdef DEBUG_VERBOSE
+      #ifdef DEBUG_EXTRA_VERBOSE
       Serial.printf("WebSocket client #%u disconnected\n", client->id());
       #endif
       //digitalWrite(RED_LED, HIGH);
@@ -2315,4 +3008,121 @@ void onServoInputWebSocketEvent(AsyncWebSocket *server,
     default:
       break;  
   }
+}
+String GetStringTime()
+{
+  bool h12Flag;
+  bool pmFlag;
+  String rVal;
+  char buf[512];
+  int ampm;
+	int hour = 0;
+	int minute = 0;
+	int second = 0;
+  hour = (int)rtc.getHour(h12Flag, pmFlag);
+  minute = (int)rtc.getMinute();
+  second = (int)rtc.getSecond();
+  if (h12Flag) 
+  {
+		if (pmFlag) 
+    {
+      ampm = 1;
+		} 
+    else 
+    {
+      ampm = 0;
+		}
+	}
+  else
+  {
+    ampm = 2;
+  }
+  //sprintf(buf, "%02d:%02d:%02d%s", hour, minute, second, ampmStr[ampm]);
+  sprintf(buf, "%02d:%02d%s", hour, minute, ampmStr[ampm]);
+  rVal = buf;
+  return rVal;
+}
+String GetStringDate()
+{
+  bool century = false;
+  String rVal;
+  char buf[512];
+  int ampm;
+	// send what's going on to the serial monitor.
+	int year = 2000;
+	int shortYear = 0;
+	int month = 0;
+	int date = 0;
+  int dow = 0;
+	if (century) 
+  {
+    year += 100;
+	}
+  shortYear = (int)rtc.getYear();
+  year += shortYear;
+	month = (int)rtc.getMonth(century);
+ 	date = (int)rtc.getDate();
+  dow = (int)rtc.getDoW();
+  //sprintf(buf, "%s %04d/%02d/%02d",days[dow-1].c_str(), year, month, date);
+  sprintf(buf, "%02d/%02d/%02d", month, date, shortYear);
+  rVal = buf;
+  return rVal;
+}
+//
+//
+//
+bool UpdateTime()
+{
+  return true;
+}
+//
+// check all buttons for new press or release
+//
+//
+// check all buttons for new press or release
+//
+void CheckButtons(unsigned long curTime)
+{
+  byte curState;
+  for(byte btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+  {
+    //curState = io.digitalRead(buttons[btnIdx].buttonPin);
+    curState = digitalRead(buttons[btnIdx].buttonPin);
+    if(((curTime - buttons[btnIdx].lastChange) > BUTTON_DEBOUNCE_DELAY) && 
+       (curState != buttons[btnIdx].buttonLast))
+    {
+      buttons[btnIdx].lastChange = curTime;
+      if(curState == BUTTON_PRESSED)
+      {
+        buttons[btnIdx].buttonPressed = 1;
+        buttons[btnIdx].buttonReleased = 0;
+        buttons[btnIdx].buttonLast = BUTTON_PRESSED;
+        buttons[btnIdx].pressDuration = 0;
+      }
+      else if (curState == BUTTON_RELEASED)
+      {
+        buttons[btnIdx].buttonPressed =  0;
+        buttons[btnIdx].buttonReleased = 1;
+        buttons[btnIdx].buttonLast = BUTTON_RELEASED;
+        buttons[btnIdx].releaseDuration = 0;
+      }
+    }
+    else
+    {
+      if(curState == BUTTON_PRESSED)
+      {
+        buttons[btnIdx].pressDuration = curTime - buttons[btnIdx].lastChange;
+      }
+      else if (curState == BUTTON_RELEASED)
+      {
+        buttons[btnIdx].releaseDuration = curTime - buttons[btnIdx].lastChange;
+      }
+    }
+  }
+}
+void YamuraBanner()
+{
+  oledDisplay.setTextColor(TFT_BLACK, TFT_RED);
+  oledDisplay.drawString("      Yamura Recording Tire Pyrometer v1.0      ", 0, DISPLAY_HEIGHT - 30, FONT_NUMBER);
+  oledDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
 }
