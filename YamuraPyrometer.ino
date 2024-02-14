@@ -196,7 +196,7 @@ void WriteSetupFile(fs::FS &fs, const char * path);
 void ReadSetupFile(fs::FS &fs, const char * path);
 void ResetTempStable();
 bool CheckTempStable(float curTemp);
-void DeleteDataFile();
+void DeleteDataFile(bool verify = true);
 void SetDateTime();
 void SetUnits();
 void ChangeSettings();
@@ -555,6 +555,7 @@ void setup()
   #ifdef DEBUG_VERBOSE
   Serial.println("Write setup file");
   #endif
+  DeleteDataFile(false);
   DeleteFile(SD, "/py_setup.txt");
   WriteSetupFile(SD, "/py_setup.txt");
   #endif
@@ -575,10 +576,10 @@ void setup()
     #endif
   }
   #endif
-  tftDisplay.drawString("Ready!",5, FONT_HEIGHT * 7, FONT_NUMBER);
+  //tftDisplay.drawString("Ready!",5, FONT_HEIGHT * 7, FONT_NUMBER);
   #ifdef HAS_RTC
-  tftDisplay.drawString(GetStringTime(), 5, FONT_HEIGHT * 8, FONT_NUMBER);
-  tftDisplay.drawString(GetStringDate(), 5, FONT_HEIGHT * 9, FONT_NUMBER);
+  tftDisplay.drawString(GetStringTime(), 5, FONT_HEIGHT * 7, FONT_NUMBER);
+  tftDisplay.drawString(GetStringDate(), 5, FONT_HEIGHT * 8, FONT_NUMBER);
   #endif
   prior = millis();
   deviceState = DISPLAY_MENU;
@@ -609,7 +610,7 @@ void setup()
   server.addHandler(&wsServoInput);
   server.begin();
   sprintf(buf, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
-  tftDisplay.drawString(buf, 5, FONT_HEIGHT * 10, FONT_NUMBER);
+  tftDisplay.drawString(buf, 5, FONT_HEIGHT * 9, FONT_NUMBER);
   #ifdef DEBUG_VERBOSE
   Serial.println("HTTP server started");
   Serial.println(buf);
@@ -632,7 +633,7 @@ void loop()
       break;
     case MEASURE_TIRES:
       MeasureAllTireTemps();
-      deviceState = DISPLAY_TIRES;
+      deviceState = DISPLAY_MENU;
       break;
     case DISPLAY_TIRES:
       DisplayAllTireTemps(cars[selectedCar]);
@@ -681,125 +682,126 @@ void MeasureTireTemps(int tireIdx)
   int textPosition[2] = {5, 0};
   bool armed = false;
 
-    measIdx = 0;  // measure location - O, M, I
-    for(int idx = 0; idx < cars[selectedCar].positionCount; idx++)
+  measIdx = 0;  // measure location - O, M, I
+  for(int idx = 0; idx < cars[selectedCar].positionCount; idx++)
+  {
+    tireTemps[(tireIdx * cars[selectedCar].positionCount) + idx] = 0.0;
+  }
+  ResetTempStable();
+  armed = false;
+  unsigned long priorTime = millis();
+  unsigned long curTime = millis();
+  // text position on OLED screen
+  textPosition[0] = 5;
+  textPosition[1] = 0;
+  #ifdef DEBUG_VERBOSE
+  Serial.print("Start tire measurement for ");
+  Serial.print(cars[selectedCar].carName.c_str());
+  Serial.print(" tire ");
+  Serial.println(cars[selectedCar].tireLongName[tireIdx].c_str());
+  #endif
+  while(true)
+  {
+    // get time and process buttons for press/release
+    curTime = millis();
+    CheckButtons(curTime);
+    if (buttons[0].buttonReleased)
     {
-      tireTemps[(tireIdx * cars[selectedCar].positionCount) + idx] = 0.0;
+      #ifdef DEBUG_EXTRA_VERBOSE
+      Serial.print("Armed tire ");
+      Serial.print(tireIdx);
+      Serial.print(" position ");
+      Serial.println(measIdx);
+      #endif
+      armed = true;
     }
-    ResetTempStable();
-    armed = false;
-    unsigned long priorTime = millis();
-    unsigned long curTime = millis();
-    // text position on OLED screen
-    textPosition[0] = 5;
-    textPosition[1] = 0;
-Serial.print("Start tire measurement for ");
-Serial.print(cars[selectedCar].carName.c_str());
-Serial.print(" tire ");
-Serial.println(cars[selectedCar].tireLongName[tireIdx].c_str());
-    while(true)
+    // cancel button released, return
+    if (buttons[1].buttonReleased)
     {
-      // get time and process buttons for press/release
-      curTime = millis();
-      CheckButtons(curTime);
-      if (buttons[0].buttonReleased)
+      buttons[1].buttonReleased = false;
+      return;
+    }
+    // check for stable temp and button release
+    // if button released, go next position or next tire
+    if(tempStable)
+    {
+      if(armed)
       {
         #ifdef DEBUG_EXTRA_VERBOSE
-        Serial.print("Armed tire ");
+        Serial.print("Save temp tire ");
         Serial.print(tireIdx);
         Serial.print(" position ");
         Serial.println(measIdx);
         #endif
-        armed = true;
-      }
-      // cancel button released, return
-      if (buttons[1].buttonReleased)
-      {
-        buttons[1].buttonReleased = false;
-        return;
-      }
-      // check for stable temp and button release
-      // if button released, go next position or next tire
-      if(tempStable)
-      {
-        if(armed)
+        measIdx++;
+        if(measIdx == cars[selectedCar].positionCount)
         {
-          #ifdef DEBUG_EXTRA_VERBOSE
-          Serial.print("Save temp tire ");
-          Serial.print(tireIdx);
-          Serial.print(" position ");
-          Serial.println(measIdx);
-          #endif
-          measIdx++;
-          if(measIdx == cars[selectedCar].positionCount)
-          {
-            measIdx = 0;
-            break;
-          }
-          tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 0;
-          ResetTempStable();
-          armed = false;
+          measIdx = 0;
+          break;
         }
-      }
-      else
-      {
-        buttons[0].buttonReleased = false;
-      }
-      // if not stablized. sample temp every .250 second, check for stable temp
-      if(!tempStable && (curTime - priorTime) > 250)
-      {
-        priorTime = curTime;
-        curTime = millis();
-        // read temp, check for stable temp, light LED if stable
-        if(armed)
-        {
-          #ifdef HAS_THERMO
-          tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
-          #else
-          tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 100;
-          #endif
-          tempStable = CheckTempStable(tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx]);
-        }
-        // text string location
-        textPosition[0] = 5;
-        textPosition[1] = 0;
-        sprintf(outStr, "%s", cars[selectedCar].tireLongName[tireIdx].c_str());
-        tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
-        textPosition[1] +=  FONT_HEIGHT;
-
-        for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
-        {
-          if(tireTemps[(tireIdx * cars[selectedCar].positionCount) + tirePosIdx] > 0.0)
-          {
-            sprintf(outStr, "%s %s:\t%3.1F", cars[selectedCar].tireShortName[tireIdx].c_str(), 
-                                            cars[selectedCar].positionShortName[tirePosIdx].c_str(), 
-                                            tireTemps[(cars[selectedCar].positionCount * tireIdx) + tirePosIdx]);
-          } 
-          else
-          {
-            if(tirePosIdx == measIdx)
-            {
-              sprintf(outStr, "%s %s:\t****",  cars[selectedCar].tireShortName[tireIdx].c_str(),  
-                                               cars[selectedCar].positionShortName[tirePosIdx].c_str());
-            }
-            else
-            {
-              sprintf(outStr, "%s %s:",  cars[selectedCar].tireShortName[tireIdx].c_str(),  
-                                               cars[selectedCar].positionShortName[tirePosIdx].c_str());
-            }
-          }
-          if(tirePosIdx == measIdx)
-          {
-            tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
-          }
-          else
-          {
-            tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
-          }
-          textPosition[1] +=  FONT_HEIGHT;
-        }
+        tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 0;
+        ResetTempStable();
+        armed = false;
       }
     }
+    else
+    {
+      buttons[0].buttonReleased = false;
+    }
+    // if not stablized. sample temp every .250 second, check for stable temp
+    if(!tempStable && (curTime - priorTime) > 250)
+    {
+      priorTime = curTime;
+      curTime = millis();
+      // read temp, check for stable temp, light LED if stable
+      if(armed)
+      {
+        #ifdef HAS_THERMO
+        tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
+        #else
+        tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 100;
+        #endif
+        tempStable = CheckTempStable(tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx]);
+      }
+      // text string location
+      textPosition[0] = 5;
+      textPosition[1] = 0;
+      sprintf(outStr, "%s", cars[selectedCar].tireLongName[tireIdx].c_str());
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+      textPosition[1] +=  FONT_HEIGHT;
+      for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
+      {
+        if(tireTemps[(tireIdx * cars[selectedCar].positionCount) + tirePosIdx] > 0.0)
+        {
+          sprintf(outStr, "%s %s:\t%3.1F", cars[selectedCar].tireShortName[tireIdx].c_str(), 
+                                          cars[selectedCar].positionShortName[tirePosIdx].c_str(), 
+                                          tireTemps[(cars[selectedCar].positionCount * tireIdx) + tirePosIdx]);
+        } 
+        else
+        {
+          if(tirePosIdx == measIdx)
+          {
+            sprintf(outStr, "%s %s:\t****",  cars[selectedCar].tireShortName[tireIdx].c_str(),  
+                                             cars[selectedCar].positionShortName[tirePosIdx].c_str());
+          }
+          else
+          {
+            sprintf(outStr, "%s %s:",  cars[selectedCar].tireShortName[tireIdx].c_str(),  
+                                             cars[selectedCar].positionShortName[tirePosIdx].c_str());
+          }
+        }
+        if(tirePosIdx == measIdx)
+        {
+          tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+        }
+        else
+        {
+          tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+        }
+        textPosition[1] +=  FONT_HEIGHT;
+      }
+    }
+  }
   for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
   {
     for(int idxMeas = 0; idxMeas < cars[selectedCar].positionCount; idxMeas++)
@@ -807,7 +809,9 @@ Serial.println(cars[selectedCar].tireLongName[tireIdx].c_str());
       Serial.println(tireTemps[(idxTire * cars[selectedCar].positionCount) + idxMeas]);
     }
   }
+  #ifdef DEBUG_VERBOSE
   Serial.println("End tire measurement");
+  #endif
 }
 ///
 ///
@@ -1066,10 +1070,11 @@ void MeasureAllTireTemps()
   YamuraBanner();
   while(true)
   {
+    #ifdef DEBUG_VERBOSE
     Serial.print("Measure tire ");
     Serial.print(selTire);
     Serial.println(" or select another tire");
-
+    #endif
     int col = 0;
     int row = 0;
     tftDisplay.drawWideLine(  horz[0][0][0], horz[0][0][1], horz[0][1][0], horz[0][1][1], 1, TFT_WHITE, TFT_BLACK);
@@ -1209,7 +1214,6 @@ void MeasureAllTireTemps()
       selTire = selTire <= cars[selectedCar].tireCount ? selTire : 0;
       continue;
     }
-//}
     priorTime = curTime;
     startMeasure = false;
     measureDone = false;
@@ -1222,7 +1226,9 @@ void MeasureAllTireTemps()
       {
         if(selTire < cars[selectedCar].tireCount)
         {
-Serial.println("Start MEARURE");
+          #ifdef DEBUG_VERBOSE
+          Serial.println("Start MEARURE");
+          #endif
           startMeasure = true;
         }
         else
@@ -1235,7 +1241,9 @@ Serial.println("Start MEARURE");
       // cancel button released, return
       else if (buttons[1].buttonReleased)
       {
-Serial.println("Select NEXT tire");
+        #ifdef DEBUG_VERBOSE
+        Serial.println("Select NEXT tire");
+        #endif
         selTire++;
         selTire = selTire <= cars[selectedCar].tireCount ? selTire : 0;
         buttons[1].buttonReleased = false;
@@ -1243,7 +1251,9 @@ Serial.println("Select NEXT tire");
       }
       else if ((buttons[2].buttonReleased) || (buttons[3].buttonReleased)) 
       {
-Serial.println("Select PRIOR tire");
+        #ifdef DEBUG_VERBOSE
+        Serial.println("Select PRIOR tire");
+        #endif
         selTire--;
         selTire = selTire >= 0 ? selTire :  cars[selectedCar].tireCount;
         buttons[2].buttonReleased = false;
@@ -1257,6 +1267,49 @@ Serial.println("Select PRIOR tire");
       break;
     }
   }
+  String fileLine = outStr;
+  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  {
+    for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
+    {
+      tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition] = currentTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
+      fileLine += ';';
+      fileLine += tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
+    }
+  }
+  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  {
+    fileLine += ';';
+    fileLine += cars[selectedCar].tireShortName[idxTire];
+  }
+  for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
+  {
+    fileLine += ';';
+    fileLine += cars[selectedCar].positionShortName[idxPosition];
+  }
+  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  {
+    fileLine += ';';
+    fileLine += cars[selectedCar].maxTemp[idxTire];
+  }
+  #ifdef DEBUG_VERBOSE
+  Serial.println(fileLine);
+  Serial.println("Add to results file...");
+  #endif
+  
+  sprintf(outStr, "/py_temps_%d.txt", selectedCar);
+  
+  #ifdef DEBUG_VERBOSE
+  Serial.print("Write results to: ");
+  Serial.println(outStr);
+  #endif
+
+  AppendFile(SD, outStr, fileLine.c_str());
+  // update the HTML file
+  #ifdef DEBUG_VERBOSE
+  Serial.println("Update HTML file...");
+  #endif
+  WriteResultsHTML();  
 }
 //
 //
@@ -1737,12 +1790,16 @@ void SetDateTime()
 //
 //
 //
-void DeleteDataFile()
+void DeleteDataFile(bool verify)
 {
-  int menuCount = 2;
-  choices[0].description = "Yes";      choices[0].result = 1;
-  choices[1].description = "No";   choices[1].result = 0;
-  int menuResult = MenuSelect (choices, menuCount, MAX_DISPLAY_LINES, 1); 
+  int menuResult = 1;
+  if(verify)
+  {
+    int menuCount = 2;
+    choices[0].description = "Yes";      choices[0].result = 1;
+    choices[1].description = "No";   choices[1].result = 0;
+    menuResult = MenuSelect (choices, menuCount, MAX_DISPLAY_LINES, 1); 
+  }
   if(menuResult == 1)
   {
     #ifdef DEBUG_HTML
@@ -2628,6 +2685,9 @@ void onServoInputWebSocketEvent(AsyncWebSocket *server,
       break;  
   }
 }
+//
+//
+//
 String GetStringTime()
 {
   bool h12Flag;
@@ -2660,6 +2720,9 @@ String GetStringTime()
   rVal = buf;
   return rVal;
 }
+//
+//
+//
 String GetStringDate()
 {
   bool century = false;
