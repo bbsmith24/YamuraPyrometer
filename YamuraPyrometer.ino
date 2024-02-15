@@ -215,10 +215,42 @@ void YamuraBanner();
 #define sd_CS 5
 #define I2C_SDA 21
 #define I2C_SCL 22
-
+int cellHorz[4][2][2];
+int cellVert[3][2][2];
 void setup()
 {
   Serial.begin(115200);
+  cellHorz[0][0][0] = 1;
+  cellHorz[0][0][1] = FONT_HEIGHT +   10;
+  cellHorz[0][1][0] = 475;
+  cellHorz[0][1][1] = FONT_HEIGHT +   10;
+  cellHorz[1][0][0] = 1;
+  cellHorz[1][0][1] = FONT_HEIGHT +   80;
+  cellHorz[1][1][0] = 475;
+  cellHorz[1][1][1] = FONT_HEIGHT +   80;
+  cellHorz[2][0][0] = 1;
+  cellHorz[2][0][1] = FONT_HEIGHT +  150;
+  cellHorz[2][1][0] = 475;
+  cellHorz[2][1][1] = FONT_HEIGHT +  150;
+  cellHorz[3][0][0] = 1;
+  cellHorz[3][0][1] = FONT_HEIGHT +  220;
+  cellHorz[3][1][0] = 475;
+  cellHorz[3][1][1] = FONT_HEIGHT +  220;
+
+  cellVert[0][0][0] = 1;
+  cellVert[0][0][1] = FONT_HEIGHT +  10;
+  cellVert[0][1][0] = 1;
+  cellVert[0][1][1] = FONT_HEIGHT + 220;
+  cellVert[1][0][0] = 237;
+  cellVert[1][0][1] = FONT_HEIGHT +  10;
+  cellVert[1][1][0] = 237; 
+  cellVert[1][1][1] = FONT_HEIGHT + 220;
+  cellVert[2][0][0] = 475;
+  cellVert[2][0][1] = FONT_HEIGHT +  10;
+  cellVert[2][1][0] = 475;
+  cellVert[2][1][1] = FONT_HEIGHT + 220;
+  
+  
   #ifdef DEBUG_VERBOSE
   delay(1000);
   Serial.println();
@@ -678,6 +710,8 @@ void DisplayMenu()
 //
 void MeasureTireTemps(int tireIdx)
 {
+  int row = 0;
+  int col = 0;
   char outStr[512];
   int textPosition[2] = {5, 0};
   bool armed = false;
@@ -707,7 +741,7 @@ void MeasureTireTemps(int tireIdx)
     CheckButtons(curTime);
     if (buttons[0].buttonReleased)
     {
-      #ifdef DEBUG_EXTRA_VERBOSE
+      #ifdef DEBUG_VERBOSE
       Serial.print("Armed tire ");
       Serial.print(tireIdx);
       Serial.print(" position ");
@@ -727,7 +761,7 @@ void MeasureTireTemps(int tireIdx)
     {
       if(armed)
       {
-        #ifdef DEBUG_EXTRA_VERBOSE
+        #ifdef DEBUG_VERBOSE
         Serial.print("Save temp tire ");
         Serial.print(tireIdx);
         Serial.print(" position ");
@@ -766,42 +800,33 @@ void MeasureTireTemps(int tireIdx)
       // text string location
       textPosition[0] = 5;
       textPosition[1] = 0;
-      sprintf(outStr, "%s", cars[selectedCar].tireLongName[tireIdx].c_str());
-      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
-      textPosition[1] +=  FONT_HEIGHT;
+      col = (tireIdx % 2);  // 0 or 1 
+      int offset = col == 0 ? 75 : -75;
+      textPosition[0] = cellVert[col][0][0];
+      if(col == 1)
+      {
+        textPosition[0] += 150;
+      }
       for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
       {
+        row = (tireIdx / 2);  // 0 (tires 0 and 1), 1 (tires 2 and 3), or 2  (tires 4 and 5)
+        textPosition[1] = cellHorz[row][0][1] + 5 + FONT_HEIGHT;
+        sprintf(outStr, "    ");
+        if((tirePosIdx == measIdx) && (!armed))
+        {
+          sprintf(outStr, "****");
+        }
         if(tireTemps[(tireIdx * cars[selectedCar].positionCount) + tirePosIdx] > 0.0)
         {
-          sprintf(outStr, "%s %s:\t%3.1F", cars[selectedCar].tireShortName[tireIdx].c_str(), 
-                                          cars[selectedCar].positionShortName[tirePosIdx].c_str(), 
-                                          tireTemps[(cars[selectedCar].positionCount * tireIdx) + tirePosIdx]);
-        } 
-        else
-        {
-          if(tirePosIdx == measIdx)
-          {
-            sprintf(outStr, "%s %s:\t****",  cars[selectedCar].tireShortName[tireIdx].c_str(),  
-                                             cars[selectedCar].positionShortName[tirePosIdx].c_str());
-          }
-          else
-          {
-            sprintf(outStr, "%s %s:",  cars[selectedCar].tireShortName[tireIdx].c_str(),  
-                                             cars[selectedCar].positionShortName[tirePosIdx].c_str());
-          }
+          sprintf(outStr, "%3.1F", tireTemps[(cars[selectedCar].positionCount * tireIdx) + tirePosIdx]);
         }
-        if(tirePosIdx == measIdx)
-        {
-          tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
-        }
-        else
-        {
-          tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
-        }
-        textPosition[1] +=  FONT_HEIGHT;
+        tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+        textPosition[0] +=  offset;
+        //textPosition[1] +=  FONT_HEIGHT;
       }
     }
   }
+  #ifdef DEBUG_VERBOSE
   for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
   {
     for(int idxMeas = 0; idxMeas < cars[selectedCar].positionCount; idxMeas++)
@@ -809,7 +834,6 @@ void MeasureTireTemps(int tireIdx)
       Serial.println(tireTemps[(idxTire * cars[selectedCar].positionCount) + idxMeas]);
     }
   }
-  #ifdef DEBUG_VERBOSE
   Serial.println("End tire measurement");
   #endif
 }
@@ -875,33 +899,19 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
   float maxTemp = 0.0F;
   float minTemp = 999.0F;
   // initial clear of screen
-  int horz[4][2][2] = {{{  1, FONT_HEIGHT +   10},
-                        {475, FONT_HEIGHT +   10}},
-                       {{  1, FONT_HEIGHT +   80},
-                        {475, FONT_HEIGHT +   80}},
-                       {{  1, FONT_HEIGHT +  150},
-                        {475, FONT_HEIGHT +  150}},
-                       {{  1, FONT_HEIGHT +  220},
-                        {475, FONT_HEIGHT +  220}}};
-  int vert[3][2][2] = {{{  1, FONT_HEIGHT +  10},
-                        {  1, FONT_HEIGHT + 220}},
-                       {{237, FONT_HEIGHT +  10},
-                        {237, FONT_HEIGHT + 220}},                        
-                       {{475, FONT_HEIGHT +  10},
-                        {475, FONT_HEIGHT + 220}}};
 
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
     int col = 0;
     int row = 0;
-    tftDisplay.drawWideLine(  horz[0][0][0], horz[0][0][1], horz[0][1][0], horz[0][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  horz[1][0][0], horz[1][0][1], horz[1][1][0], horz[1][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  horz[2][0][0], horz[2][0][1], horz[2][1][0], horz[2][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  horz[3][0][0], horz[3][0][1], horz[3][1][0], horz[3][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellHorz[0][0][0], cellHorz[0][0][1], cellHorz[0][1][0], cellHorz[0][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellHorz[1][0][0], cellHorz[1][0][1], cellHorz[1][1][0], cellHorz[1][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellHorz[2][0][0], cellHorz[2][0][1], cellHorz[2][1][0], cellHorz[2][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellHorz[3][0][0], cellHorz[3][0][1], cellHorz[3][1][0], cellHorz[3][1][1], 1, TFT_WHITE, TFT_BLACK);
 
-    tftDisplay.drawWideLine(  vert[0][0][0], vert[0][0][1], vert[0][1][0], vert[0][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  vert[1][0][0], vert[1][0][1], vert[1][1][0], vert[1][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  vert[2][0][0], vert[2][0][1], vert[2][1][0], vert[2][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellVert[0][0][0], cellVert[0][0][1], cellVert[0][1][0], cellVert[0][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellVert[1][0][0], cellVert[1][0][1], cellVert[1][1][0], cellVert[1][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellVert[2][0][0], cellVert[2][0][1], cellVert[2][1][0], cellVert[2][1][1], 1, TFT_WHITE, TFT_BLACK);
 
     sprintf(outStr, "%s %s", currentResultCar.carName.c_str(), currentResultCar.dateTime.c_str());
     #ifdef DEBUG_VERBOSE
@@ -919,8 +929,8 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
     {
       col = (idxTire % 2);  // 0 or 1
       row = (idxTire / 2);  // 0 (tires 0 and 1), 1 (tires 2 and 3), or 2  (tires 4 and 5)
-      textPosition[0] = vert[col][0][0] + 5;
-      textPosition[1] = horz[row][0][1] + 5;
+      textPosition[0] = cellVert[col][0][0] + 5;
+      textPosition[1] = cellHorz[row][0][1] + 5;
       maxTemp = 0.0F;
       for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
       {
@@ -1043,21 +1053,6 @@ void MeasureAllTireTemps()
   float maxTemp = 0.0F;
   float minTemp = 999.0F;
   // initial clear of screen
-  int horz[4][2][2] = {{{  1, FONT_HEIGHT +   10},
-                        {475, FONT_HEIGHT +   10}},
-                       {{  1, FONT_HEIGHT +   80},
-                        {475, FONT_HEIGHT +   80}},
-                       {{  1, FONT_HEIGHT +  150},
-                        {475, FONT_HEIGHT +  150}},
-                       {{  1, FONT_HEIGHT +  220},
-                        {475, FONT_HEIGHT +  220}}};
-  int vert[3][2][2] = {{{  1, FONT_HEIGHT +  10},
-                        {  1, FONT_HEIGHT + 220}},
-                       {{237, FONT_HEIGHT +  10},
-                        {237, FONT_HEIGHT + 220}},                        
-                       {{475, FONT_HEIGHT +  10},
-                        {475, FONT_HEIGHT + 220}}};
-
   for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
   {
     for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
@@ -1077,14 +1072,14 @@ void MeasureAllTireTemps()
     #endif
     int col = 0;
     int row = 0;
-    tftDisplay.drawWideLine(  horz[0][0][0], horz[0][0][1], horz[0][1][0], horz[0][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  horz[1][0][0], horz[1][0][1], horz[1][1][0], horz[1][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  horz[2][0][0], horz[2][0][1], horz[2][1][0], horz[2][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  horz[3][0][0], horz[3][0][1], horz[3][1][0], horz[3][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellHorz[0][0][0], cellHorz[0][0][1], cellHorz[0][1][0], cellHorz[0][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellHorz[1][0][0], cellHorz[1][0][1], cellHorz[1][1][0], cellHorz[1][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellHorz[2][0][0], cellHorz[2][0][1], cellHorz[2][1][0], cellHorz[2][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellHorz[3][0][0], cellHorz[3][0][1], cellHorz[3][1][0], cellHorz[3][1][1], 1, TFT_WHITE, TFT_BLACK);
 
-    tftDisplay.drawWideLine(  vert[0][0][0], vert[0][0][1], vert[0][1][0], vert[0][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  vert[1][0][0], vert[1][0][1], vert[1][1][0], vert[1][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  vert[2][0][0], vert[2][0][1], vert[2][1][0], vert[2][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellVert[0][0][0], cellVert[0][0][1], cellVert[0][1][0], cellVert[0][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellVert[1][0][0], cellVert[1][0][1], cellVert[1][1][0], cellVert[1][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  cellVert[2][0][0], cellVert[2][0][1], cellVert[2][1][0], cellVert[2][1][1], 1, TFT_WHITE, TFT_BLACK);
 
     sprintf(outStr, "%s", cars[selectedCar].carName.c_str());
     #ifdef DEBUG_VERBOSE
@@ -1111,8 +1106,8 @@ void MeasureAllTireTemps()
         // tires
         col = (idxTire % 2);  // 0 or 1
         row = (idxTire / 2);  // 0 (tires 0 and 1), 1 (tires 2 and 3), or 2  (tires 4 and 5)
-        textPosition[0] = vert[col][0][0] + 5;
-        textPosition[1] = horz[row][0][1] + 5;
+        textPosition[0] = cellVert[col][0][0] + 5;
+        textPosition[1] = cellHorz[row][0][1] + 5;
         maxTemp = 0.0F;
         minTemp = 999.0F;
         for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
