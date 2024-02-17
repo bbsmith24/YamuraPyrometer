@@ -997,6 +997,8 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
   unsigned long priorTime = millis();
   textPosition[0] = 5;
   textPosition[1] = 0;
+  int row = 0;
+  int col = 0;
   char outStr[255];
   char padStr[3];
   float maxTemp = 0.0F;
@@ -1006,107 +1008,73 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
   YamuraBanner();
   DrawGrid(currentResultCar.tireCount);
 
-    sprintf(outStr, "%s %s", currentResultCar.carName.c_str(), currentResultCar.dateTime.c_str());
-    #ifdef DEBUG_VERBOSE
-    Serial.print("Results for car: ");
-    Serial.print(currentResultCar.carName.c_str());
-    Serial.print(" ");
-    Serial.print(" on ");
-    Serial.print(currentResultCar.dateTime.c_str());
-    Serial.print(" ");
-    Serial.println(outStr);
-    #endif
-    tftDisplay.setFreeFont(FSS12);
-    tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawString(outStr, 5, 0, GFXFF);
+  sprintf(outStr, "%s %s", currentResultCar.carName.c_str(), currentResultCar.dateTime.c_str());
+  #ifdef DEBUG_VERBOSE
+  Serial.print("Results for car: ");
+  Serial.print(currentResultCar.carName.c_str());
+  Serial.print(" ");
+  Serial.print(" on ");
+  Serial.print(currentResultCar.dateTime.c_str());
+  Serial.print(" ");
+  Serial.println(outStr);
+  #endif
+  tftDisplay.setFreeFont(FSS12);
+  tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  tftDisplay.drawString(outStr, 5, 0, GFXFF);
 
-    for(int idxTire = 0; idxTire < currentResultCar.tireCount; idxTire++)
+  for(int idxTire = 0; idxTire < currentResultCar.tireCount; idxTire++)
+  {
+    // get min/max temps
+    maxTemp = 0.0F;
+    for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
     {
-      int col = (idxTire % 2);  // 0 or 1
-      //row = (idxTire / 2);  // 0 (tires 0 and 1), 1 (tires 2 and 3), or 2  (tires 4 and 5)
-      //textPosition[0] = gridLineV[col][0][0] + 5;
-      //textPosition[1] = gridLineH[row][0][1] + 5;
-      maxTemp = 0.0F;
-      for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
+      maxTemp = tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] > maxTemp ? tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] : maxTemp;
+      minTemp = tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] < minTemp ? tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] : minTemp;
+    }    
+	for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
+    {
+      // draw tire position name
+      row = ((idxTire / 2) * 2);
+      col = tirePosIdx + ((idxTire % 2) * 3);
+      if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= 100.0F)
       {
-        maxTemp = tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] > maxTemp ? tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] : maxTemp;
-        minTemp = tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] < minTemp ? tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] : minTemp;
-      }    
-
-      textPosition[1] +=  FONT_HEIGHT;
-      int tirePosIdx = 0;
-      if(col == 0)
-      {
-        tirePosIdx = 0;
+        padStr[0] = '\0';
       }
-      else if(col == 1)
+      else if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= 10.0F)
       {
-        tirePosIdx = currentResultCar.positionCount - 1;
+        sprintf(padStr, " ");
       }
-      while(true)
+      else
       {
-        textPosition[0] = cellPoint[idxTire][tirePosIdx][0];
-        textPosition[1] = cellPoint[idxTire][tirePosIdx][1];
-        if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= 100.0F)
-        {
-          padStr[0] = '\0';
-        }
-        else if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= 10.0F)
-        {
-          sprintf(padStr, " ");
-        }
-        else
-        {
-          sprintf(padStr, "  ");
-        }
-        if(tirePosIdx == 0)
-        {
-          sprintf(outStr, "%s %s", currentResultCar.tireShortName[idxTire].c_str(),
-                                   currentResultCar.positionShortName[tirePosIdx].c_str());
-        }
-        else
-        {
-          sprintf(outStr, "%s", currentResultCar.positionShortName[tirePosIdx].c_str());
-        }
-        tftDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
-        tftDisplay.drawString(outStr, textPosition[0], textPosition[1] - FONT_HEIGHT, GFXFF);
-
-        sprintf(outStr, "%3.1F", tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx]);
-        if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == maxTemp)
-        {
-            tftDisplay.setTextColor(TFT_BLACK, TFT_RED);
-            tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
-        }
-        else if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == minTemp)
-        {
-            tftDisplay.setTextColor(TFT_BLACK, TFT_BLUE);
-            tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
-        }
-        else
-        {
-          tftDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
-          tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
-        }
-        textPosition[0] +=  75;
-        if(col == 0)
-        {
-          tirePosIdx++;
-          if(tirePosIdx >= currentResultCar.positionCount)
-          {
-            break;
-          }
-        }
-        else if(col == 1)
-        {
-          tirePosIdx--;
-          if(tirePosIdx < 0)
-          {
-            break;
-          }
-        }   
+        sprintf(padStr, "  ");
+      }
+      if(tirePosIdx == 0)
+      {
+        sprintf(outStr, "%s %s", currentResultCar.tireShortName[idxTire].c_str(),
+                                 currentResultCar.positionShortName[tirePosIdx].c_str());
+      }
+      else
+      {
+        sprintf(outStr, "%s", currentResultCar.positionShortName[tirePosIdx].c_str());
+      }
+	  // tire name, position
+      DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLACK);
+      row++;
+      sprintf(outStr, "%3.1F", tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx]);
+      if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == maxTemp)
+      {
+        DrawCellText(row, col, outStr, TFT_BLACK, TFT_RED);
+      }
+      else if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == minTemp)
+      {
+        DrawCellText(row, col, outStr, TFT_BLACK, TFT_BLUE);
+      }
+      else
+      {
+        DrawCellText(row, col, outStr, TFT_WHITE,  TFT_BLACK);
       }
     }
-  //}
+  }
   priorTime = curTime;
   while(true)
   {
@@ -1918,7 +1886,7 @@ void ResetTempStable()
   tempStable = false;
 }
 //
-//
+//CarSettings
 //
 void ReadSetupFile(fs::FS &fs, const char * path)
 {
