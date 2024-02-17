@@ -53,6 +53,10 @@
 #define DEBUG_VERBOSE
 //#define DEBUG_EXTRA_VERBOSE
 //#define DEBUG_HTML
+// microSD chip select, I2C pins
+#define sd_CS 5
+#define I2C_SDA 21
+#define I2C_SCL 22
 // uncomment for RTC module attached
 #define HAS_RTC
 // uncomment for thermocouple module attached
@@ -68,7 +72,6 @@
 #define CHANGE_SETTINGS         5
 #define INSTANT_TEMP            6
 
-#define FONT_NUMBER             4
 #define FONT_HEIGHT            25
 #define DISPLAY_WIDTH         480
 #define DISPLAY_HEIGHT        320
@@ -155,11 +158,13 @@ bool century = false;
 bool h12Flag;
 bool pmFlag;
 String days[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri","Sat"};
-String ampmStr[3] = {"am", "pm", "(24H)"};
+String ampmStr[3] = {"am", "pm", "\0"};
 
 #define MAX_DISPLAY_LINES 12
 // TFT display
 TFT_eSPI tftDisplay = TFT_eSPI();
+// location of text
+int textPosition[2] = {5, 0};
 
 int tempIdx = 0;
 float tempStableRecent[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
@@ -209,47 +214,22 @@ void DisplayMenu();
 void InstantTemp();
 void CheckButtons(unsigned long curTime);
 void YamuraBanner();
+void DrawGrid(int tireCount);
+void DrawCellText(int row, int col, char* text, uint16_t textColor, uint16_t backColor);
+void SetupGrid(const GFXfont* font);
 //
 // 
 //
-#define sd_CS 5
-#define I2C_SDA 21
-#define I2C_SCL 22
-int cellHorz[4][2][2];
-int cellVert[3][2][2];
+int gridLineH[4][2][2];   //  4 vertical lines, 2 points per line, 2 values per point (X and Y)
+int gridLineV[3][2][2];   //  3 vertical lines, 2 points per line, 2 values per point (X and Y)
+int cellPoint[7][6][2];   //  6 max rows, 6 points per cell, 2 values per point (X and Y)
+//
+//
+//
 void setup()
 {
+  char outStr[128];
   Serial.begin(115200);
-  cellHorz[0][0][0] = 1;
-  cellHorz[0][0][1] = FONT_HEIGHT +   10;
-  cellHorz[0][1][0] = 475;
-  cellHorz[0][1][1] = FONT_HEIGHT +   10;
-  cellHorz[1][0][0] = 1;
-  cellHorz[1][0][1] = FONT_HEIGHT +   80;
-  cellHorz[1][1][0] = 475;
-  cellHorz[1][1][1] = FONT_HEIGHT +   80;
-  cellHorz[2][0][0] = 1;
-  cellHorz[2][0][1] = FONT_HEIGHT +  150;
-  cellHorz[2][1][0] = 475;
-  cellHorz[2][1][1] = FONT_HEIGHT +  150;
-  cellHorz[3][0][0] = 1;
-  cellHorz[3][0][1] = FONT_HEIGHT +  220;
-  cellHorz[3][1][0] = 475;
-  cellHorz[3][1][1] = FONT_HEIGHT +  220;
-
-  cellVert[0][0][0] = 1;
-  cellVert[0][0][1] = FONT_HEIGHT +  10;
-  cellVert[0][1][0] = 1;
-  cellVert[0][1][1] = FONT_HEIGHT + 220;
-  cellVert[1][0][0] = 237;
-  cellVert[1][0][1] = FONT_HEIGHT +  10;
-  cellVert[1][1][0] = 237; 
-  cellVert[1][1][1] = FONT_HEIGHT + 220;
-  cellVert[2][0][0] = 475;
-  cellVert[2][0][1] = FONT_HEIGHT +  10;
-  cellVert[2][1][0] = 475;
-  cellVert[2][1][1] = FONT_HEIGHT + 220;
-  
   
   #ifdef DEBUG_VERBOSE
   delay(1000);
@@ -306,21 +286,25 @@ void setup()
   buttons[3].buttonPin = 27;
   // set up tft display
   tftDisplay.init();
-
   int w = tftDisplay.width();
   int h = tftDisplay.height();
-  // 0 portrait pins down
+  textPosition[0] = 5;
+  textPosition[1] = 0;
+    // 0 portrait pins down
   // 1 landscape pins right
   // 2 portrait pins up
   // 3 landscape pins left
   tftDisplay.setRotation(1);
-
+  SetupGrid(FSS12);
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
 
+  tftDisplay.setFreeFont(FSS12);
+  tftDisplay.setTextDatum(TL_DATUM);
+  int fontHeight = tftDisplay.fontHeight(GFXFF);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
-  tftDisplay.drawString("Yamura Electronics",5, 0, FONT_NUMBER);
-  tftDisplay.drawString("Recording Pyrometer",5, FONT_HEIGHT, FONT_NUMBER);
+  tftDisplay.drawString("Yamura Electronics Recording Pyrometer", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
   //
   #ifdef DEBUG_VERBOSE
   Serial.print("OLED screen size ");
@@ -349,14 +333,15 @@ void setup()
     #ifdef DEBUG_VERBOSE
     Serial.println("Thermocouple did not acknowledge! Freezing.");
     #endif
-    tftDisplay.drawString("Thermocouple FAIL", 5, FONT_HEIGHT * 2, FONT_NUMBER);
+    tftDisplay.drawString("Thermocouple FAIL", textPosition[0], textPosition[1], GFXFF);
     delay(5000);
   }
   //check if the sensor is connected
   #ifdef DEBUG_VERBOSE
   Serial.println("Thermocouple Device acknowledged!");
   #endif
-  tftDisplay.drawString("Thermocouple OK", 5, FONT_HEIGHT * 2, FONT_NUMBER);
+  tftDisplay.drawString("Thermocouple OK", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
   delay(1000);
   //check if the Device ID is correct
   if(tempSensor.checkDeviceID())
@@ -505,21 +490,17 @@ void setup()
       #ifdef DEBUG_VERBOSE
       Serial.println("RTC not initialized, check wiring");
       #endif
-      tftDisplay.drawString("RTC FAIL", 5, FONT_HEIGHT * 3, FONT_NUMBER);
+      tftDisplay.drawString("RTC FAIL", textPosition[0], textPosition[1], GFXFF);
       while(true);
     }
-    tftDisplay.drawString("RTC OK", 5, FONT_HEIGHT * 3, FONT_NUMBER);
     #ifdef DEBUG_VERBOSE
     Serial.println("RTC online!");
     #endif
     delay(1000);
   #endif
   #endif
-  tftDisplay.drawString("RTC OK",        5, FONT_HEIGHT * 3, FONT_NUMBER);
-  tftDisplay.drawString(GetStringTime(), 5, FONT_HEIGHT * 4, FONT_NUMBER);
-  tftDisplay.drawString(GetStringDate(), 5, FONT_HEIGHT * 5, FONT_NUMBER);
-
-  Serial.println();
+  tftDisplay.drawString("RTC OK", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
 
   Serial.println("Button setup");
   for(int idx = 0; idx < BUTTON_COUNT; idx++)
@@ -538,10 +519,11 @@ void setup()
     #ifdef DEBUG_VERBOSE
     Serial.println("microSD card mount Failed");
     #endif
-    tftDisplay.drawString("microSD card mount failed", 5, FONT_HEIGHT  * 6, FONT_NUMBER);
+    tftDisplay.drawString("microSD card mount failed", textPosition[0], textPosition[1], GFXFF);
     while(true);
   }
-  tftDisplay.drawString("microSD OK", 5, FONT_HEIGHT  * 6, FONT_NUMBER);
+  tftDisplay.drawString("microSD OK", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
   uint8_t cardType = SD.cardType();
   if(cardType == CARD_NONE)
   {
@@ -587,7 +569,6 @@ void setup()
   #ifdef DEBUG_VERBOSE
   Serial.println("Write setup file");
   #endif
-  DeleteDataFile(false);
   DeleteFile(SD, "/py_setup.txt");
   WriteSetupFile(SD, "/py_setup.txt");
   #endif
@@ -608,10 +589,10 @@ void setup()
     #endif
   }
   #endif
-  //tftDisplay.drawString("Ready!",5, FONT_HEIGHT * 7, FONT_NUMBER);
   #ifdef HAS_RTC
-  tftDisplay.drawString(GetStringTime(), 5, FONT_HEIGHT * 7, FONT_NUMBER);
-  tftDisplay.drawString(GetStringDate(), 5, FONT_HEIGHT * 8, FONT_NUMBER);
+  sprintf(outStr, "%s %s", GetStringTime().c_str(), GetStringDate().c_str());
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
   #endif
   prior = millis();
   deviceState = DISPLAY_MENU;
@@ -641,11 +622,15 @@ void setup()
   wsServoInput.onEvent(onServoInputWebSocketEvent);
   server.addHandler(&wsServoInput);
   server.begin();
-  sprintf(buf, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
-  tftDisplay.drawString(buf, 5, FONT_HEIGHT * 9, FONT_NUMBER);
+  sprintf(outStr, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
+  sprintf(outStr, "Password %s", pass);
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
   #ifdef DEBUG_VERBOSE
   Serial.println("HTTP server started");
-  Serial.println(buf);
+  Serial.println(outStr);
   #endif
   delay(5000);
 }
@@ -710,13 +695,13 @@ void DisplayMenu()
 //
 void MeasureTireTemps(int tireIdx)
 {
-  int row = 0;
-  int col = 0;
   char outStr[512];
-  int textPosition[2] = {5, 0};
+  textPosition[0] = 5;
+  textPosition[1] = 0;
   bool armed = false;
-
-  measIdx = 0;  // measure location - O, M, I
+  // measure location - O, M, I
+  measIdx = 0;  
+  // reset tire temps to 0.0
   for(int idx = 0; idx < cars[selectedCar].positionCount; idx++)
   {
     tireTemps[(tireIdx * cars[selectedCar].positionCount) + idx] = 0.0;
@@ -726,19 +711,20 @@ void MeasureTireTemps(int tireIdx)
   unsigned long priorTime = millis();
   unsigned long curTime = millis();
   // text position on OLED screen
-  textPosition[0] = 5;
-  textPosition[1] = 0;
   #ifdef DEBUG_VERBOSE
   Serial.print("Start tire measurement for ");
   Serial.print(cars[selectedCar].carName.c_str());
   Serial.print(" tire ");
   Serial.println(cars[selectedCar].tireLongName[tireIdx].c_str());
   #endif
+  // measuring until all positions are measured
   while(true)
   {
     // get time and process buttons for press/release
     curTime = millis();
     CheckButtons(curTime);
+    // button 1 release arms probe
+    // prior to arm, display ****, after display temp as it stabilizes
     if (buttons[0].buttonReleased)
     {
       #ifdef DEBUG_VERBOSE
@@ -748,6 +734,7 @@ void MeasureTireTemps(int tireIdx)
       Serial.println(measIdx);
       #endif
       armed = true;
+      buttons[0].buttonReleased = false;
     }
     // cancel button released, return
     if (buttons[1].buttonReleased)
@@ -755,10 +742,10 @@ void MeasureTireTemps(int tireIdx)
       buttons[1].buttonReleased = false;
       return;
     }
-    // check for stable temp and button release
-    // if button released, go next position or next tire
+    // check for stable temp and armed
     if(tempStable)
     {
+      // armed, save the temp and go to next position
       if(armed)
       {
         #ifdef DEBUG_VERBOSE
@@ -768,6 +755,7 @@ void MeasureTireTemps(int tireIdx)
         Serial.println(measIdx);
         #endif
         measIdx++;
+        // done measuring
         if(measIdx == cars[selectedCar].positionCount)
         {
           measIdx = 0;
@@ -777,10 +765,6 @@ void MeasureTireTemps(int tireIdx)
         ResetTempStable();
         armed = false;
       }
-    }
-    else
-    {
-      buttons[0].buttonReleased = false;
     }
     // if not stablized. sample temp every .250 second, check for stable temp
     if(!tempStable && (curTime - priorTime) > 250)
@@ -797,21 +781,9 @@ void MeasureTireTemps(int tireIdx)
         #endif
         tempStable = CheckTempStable(tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx]);
       }
-      // text string location
-      textPosition[0] = 5;
-      textPosition[1] = 0;
-      col = (tireIdx % 2);  // 0 or 1 
-      int offset = col == 0 ? 75 : -75;
-      textPosition[0] = cellVert[col][0][0];
-      if(col == 1)
-      {
-        textPosition[0] += 150;
-      }
       for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
       {
-        row = (tireIdx / 2);  // 0 (tires 0 and 1), 1 (tires 2 and 3), or 2  (tires 4 and 5)
-        textPosition[1] = cellHorz[row][0][1] + 5 + FONT_HEIGHT;
-        sprintf(outStr, "    ");
+        sprintf(outStr, " ");
         if((tirePosIdx == measIdx) && (!armed))
         {
           sprintf(outStr, "****");
@@ -820,9 +792,13 @@ void MeasureTireTemps(int tireIdx)
         {
           sprintf(outStr, "%3.1F", tireTemps[(cars[selectedCar].positionCount * tireIdx) + tirePosIdx]);
         }
-        tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
-        textPosition[0] +=  offset;
-        //textPosition[1] +=  FONT_HEIGHT;
+        int row = ((tireIdx / 2) * 2) + 1;
+        int col = tirePosIdx + ((tireIdx % 2) * 3);
+        DrawCellText(row, 
+                     col, 
+                     outStr, 
+                     TFT_WHITE, 
+                     TFT_BLACK);
       }
     }
   }
@@ -846,10 +822,15 @@ void InstantTemp()
   unsigned long curTime = millis();
   char outStr[128];
   float instant_temp = 0.0;
-  int textPosition[2] = {5, 0};
+  textPosition[0] = 5;
+  textPosition[1] = 0;
   randomSeed(100);
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
+  tftDisplay.setFreeFont(FSS18);
+  tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  tftDisplay.drawString("Temperature", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] +=  tftDisplay.fontHeight();
   while(true)
   {
     curTime = millis();
@@ -866,13 +847,8 @@ void InstantTemp()
       Serial.print("Instant temp ");
       Serial.println(instant_temp);
       #endif
-      // text string location
-      textPosition[0] = 5;
-      textPosition[1] = 0;
-      tftDisplay.drawString("Temperature", textPosition[0], textPosition[1], FONT_NUMBER);
-      textPosition[1] +=  2 * FONT_HEIGHT;
       sprintf(outStr, "%0.2f", instant_temp);
-      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
     }
     CheckButtons(curTime);
     // any button released, exit
@@ -885,6 +861,133 @@ void InstantTemp()
     }
   }
 }
+//
+//
+//
+void DrawGrid(int tireCount)
+{
+  // horizontal lines
+  int maxY = 0;
+  for(int idx = 0; idx <= (tireCount/2 + tireCount%2); idx++)
+  {
+    tftDisplay.drawWideLine(  gridLineH[idx][0][0], gridLineH[idx][0][1], gridLineH[idx][1][0], gridLineH[idx][1][1], 1, TFT_WHITE, TFT_BLACK);
+    maxY = gridLineH[idx][0][1];
+  }
+  // vertical Lines
+  for(int idx = 0; idx < 3; idx++)
+  {
+    gridLineV[idx][1][1] = maxY;
+    tftDisplay.drawWideLine(  gridLineV[idx][0][0], gridLineV[idx][0][1], gridLineV[idx][1][0], gridLineV[idx][1][1], 1, TFT_WHITE, TFT_BLACK);
+  }
+}
+//
+//
+//
+void SetupGrid(const GFXfont* font)
+{
+    tftDisplay.setFreeFont(font);
+	int fontHeight = tftDisplay.fontHeight(GFXFF);
+  // 4 horizontal grid lines
+  // x = 1 (start) 475 (end)
+  // at y = 
+  // FONT_HEIGHT +  10;
+  // FONT_HEIGHT +  80;
+  // FONT_HEIGHT + 150;
+  // FONT_HEIGHT + 220;
+  gridLineH[0][0][0] = 1;      gridLineH[0][0][1] = fontHeight +   10;
+  gridLineH[0][1][0] = 475;    gridLineH[0][1][1] = fontHeight +   10;
+  
+  gridLineH[1][0][0] = 1;      gridLineH[1][0][1] = fontHeight +   80;
+  gridLineH[1][1][0] = 475;    gridLineH[1][1][1] = fontHeight +   80;
+  
+  gridLineH[2][0][0] = 1;      gridLineH[2][0][1] = fontHeight +  150;
+  gridLineH[2][1][0] = 475;    gridLineH[2][1][1] = fontHeight +  150;
+  
+  gridLineH[3][0][0] = 1;      gridLineH[3][0][1] = fontHeight +  220;
+  gridLineH[3][1][0] = 475;    gridLineH[3][1][1] = fontHeight +  220;
+  
+  // 3 vertical grid lines
+  // at x = 
+  // 1
+  // 237
+  // 475
+  gridLineV[0][0][0] = 1;       gridLineV[0][0][1] = fontHeight +  10;
+  gridLineV[0][1][0] = 1;       gridLineV[0][1][1] = fontHeight + 220;
+  gridLineV[1][0][0] = 237;     gridLineV[1][0][1] = fontHeight +  10;
+  gridLineV[1][1][0] = 237;     gridLineV[1][1][1] = fontHeight + 220;
+  gridLineV[2][0][0] = 475;     gridLineV[2][0][1] = fontHeight +  10;
+  gridLineV[2][1][0] = 475;     gridLineV[2][1][1] = fontHeight + 220;
+  // V               V               V
+  // 0               1               2
+  // ==G0===============G1============  H0
+  // | 0,0  0,1  0,2 | 0,5  0,4  0,3 |
+  // | 1,0  1,1  1,2 | 1,5  1,4  1,3 |
+  // ==G2===============G3============  H1
+  // | 2,0  2,1  2,2 | 2,5  2,4  2,3 |
+  // | 3,0  3,1  3,2 | 3,5  3,4  3,3 |
+  // ==G4===============G5============  H2
+  // | 4,0  4,1  4,2 | 4,5  4,4  4,3 |
+  // | 5,0  5,1  5,2 | 5,5  5,4  5,3 |
+  // =================================  H3
+  //               DONE
+  //  
+  //
+  // 36 text locations in grid boxes
+  // not that cell order in col 1 is reversed so measure order matches orientation on car
+  //
+  // grid row 0
+  // cell row 0
+  cellPoint[0][0][0] = gridLineV[0][0][0] +   5;              cellPoint[0][0][1] = gridLineH[0][0][1] + 5;
+  cellPoint[0][1][0] = gridLineV[0][0][0] +  75;              cellPoint[0][1][1] = gridLineH[0][0][1] + 5;
+  cellPoint[0][2][0] = gridLineV[0][0][0] + 145;              cellPoint[0][2][1] = gridLineH[0][0][1] + 5;
+  cellPoint[0][3][0] = gridLineV[1][0][0] + 145;              cellPoint[0][3][1] = gridLineH[0][0][1] + 5;
+  cellPoint[0][4][0] = gridLineV[1][0][0] +  75;              cellPoint[0][4][1] = gridLineH[0][0][1] + 5;
+  cellPoint[0][5][0] = gridLineV[1][0][0] +   5;              cellPoint[0][5][1] = gridLineH[0][0][1] + 5;
+  // cell row 1
+  cellPoint[1][0][0] = gridLineV[0][0][0] +   5;              cellPoint[1][0][1] = gridLineH[0][0][1] + fontHeight + 5;
+  cellPoint[1][1][0] = gridLineV[0][0][0] +  75;              cellPoint[1][1][1] = gridLineH[0][0][1] + fontHeight + 5;
+  cellPoint[1][2][0] = gridLineV[0][0][0] + 145;              cellPoint[1][2][1] = gridLineH[0][0][1] + fontHeight + 5;
+  cellPoint[1][3][0] = gridLineV[1][0][0] + 145;              cellPoint[1][3][1] = gridLineH[0][0][1] + fontHeight + 5;
+  cellPoint[1][4][0] = gridLineV[1][0][0] +  75;              cellPoint[1][4][1] = gridLineH[0][0][1] + fontHeight + 5;
+  cellPoint[1][5][0] = gridLineV[1][0][0] +   5;              cellPoint[1][5][1] = gridLineH[0][0][1] + fontHeight + 5;
+  // grid row 1
+  // cell row 2
+  cellPoint[2][0][0] = gridLineV[0][0][0] +   5;              cellPoint[2][0][1] = gridLineH[1][0][1] + 5;
+  cellPoint[2][1][0] = gridLineV[0][0][0] +  75;              cellPoint[2][1][1] = gridLineH[1][0][1] + 5;
+  cellPoint[2][2][0] = gridLineV[0][0][0] + 145;              cellPoint[2][2][1] = gridLineH[1][0][1] + 5;
+  cellPoint[2][3][0] = gridLineV[1][0][0] + 145;              cellPoint[2][3][1] = gridLineH[1][0][1] + 5;
+  cellPoint[2][4][0] = gridLineV[1][0][0] +  75;              cellPoint[2][4][1] = gridLineH[1][0][1] + 5;
+  cellPoint[2][5][0] = gridLineV[1][0][0] +   5;              cellPoint[2][5][1] = gridLineH[1][0][1] + 5;
+  // cell row 3
+  cellPoint[3][0][0] = gridLineV[0][0][0] +   5;              cellPoint[3][0][1] = gridLineH[1][0][1] + fontHeight + 5;
+  cellPoint[3][1][0] = gridLineV[0][0][0] +  75;              cellPoint[3][1][1] = gridLineH[1][0][1] + fontHeight + 5;
+  cellPoint[3][2][0] = gridLineV[0][0][0] + 145;              cellPoint[3][2][1] = gridLineH[1][0][1] + fontHeight + 5;
+  cellPoint[3][3][0] = gridLineV[1][0][0] + 145;              cellPoint[3][3][1] = gridLineH[1][0][1] + fontHeight + 5;
+  cellPoint[3][4][0] = gridLineV[1][0][0] +  75;              cellPoint[3][4][1] = gridLineH[1][0][1] + fontHeight + 5;
+  cellPoint[3][5][0] = gridLineV[1][0][0] +   5;              cellPoint[3][5][1] = gridLineH[1][0][1] + fontHeight + 5;
+  // grid row 2
+  // cell row 4
+  cellPoint[4][0][0] = gridLineV[0][0][0] +   5;              cellPoint[4][0][1] = gridLineH[2][0][1] + 5;
+  cellPoint[4][1][0] = gridLineV[0][0][0] +  75;              cellPoint[4][1][1] = gridLineH[2][0][1] + 5;
+  cellPoint[4][2][0] = gridLineV[0][0][0] + 145;              cellPoint[4][2][1] = gridLineH[2][0][1] + 5;
+  cellPoint[4][3][0] = gridLineV[1][0][0] + 145;              cellPoint[4][3][1] = gridLineH[2][0][1] + 5;
+  cellPoint[4][4][0] = gridLineV[1][0][0] +  75;              cellPoint[4][4][1] = gridLineH[2][0][1] + 5;
+  cellPoint[4][5][0] = gridLineV[1][0][0] +   5;              cellPoint[4][5][1] = gridLineH[2][0][1] + 5;
+  // cell row 5
+  cellPoint[5][0][0] = gridLineV[0][0][0] +   5;              cellPoint[5][0][1] = gridLineH[2][0][1] + fontHeight + 5;
+  cellPoint[5][1][0] = gridLineV[0][0][0] +  75;              cellPoint[5][1][1] = gridLineH[2][0][1] + fontHeight + 5;
+  cellPoint[5][2][0] = gridLineV[0][0][0] + 145;              cellPoint[5][2][1] = gridLineH[2][0][1] + fontHeight + 5;
+  cellPoint[5][3][0] = gridLineV[1][0][0] + 145;              cellPoint[5][3][1] = gridLineH[2][0][1] + fontHeight + 5;
+  cellPoint[5][4][0] = gridLineV[1][0][0] +  75;              cellPoint[5][4][1] = gridLineH[2][0][1] + fontHeight + 5;
+  cellPoint[5][5][0] = gridLineV[1][0][0] +   5;              cellPoint[5][5][1] = gridLineH[2][0][1] + fontHeight + 5;
+  // cell row 6
+  cellPoint[6][0][0] = gridLineV[0][0][0] +   5;              cellPoint[6][0][1] = gridLineH[3][0][1] + fontHeight + 10;
+  cellPoint[6][1][0] = gridLineV[0][0][0] +  75;              cellPoint[6][1][1] = gridLineH[3][0][1] + fontHeight + 10;
+  cellPoint[6][2][0] = gridLineV[0][0][0] + 145;              cellPoint[6][2][1] = gridLineH[3][0][1] + fontHeight + 10;
+  cellPoint[6][3][0] = gridLineV[1][0][0] + 145;              cellPoint[6][3][1] = gridLineH[3][0][1] + fontHeight + 10;
+  cellPoint[6][4][0] = gridLineV[1][0][0] +  75;              cellPoint[6][4][1] = gridLineH[3][0][1] + fontHeight + 10;
+  cellPoint[6][5][0] = gridLineV[1][0][0] +   5;              cellPoint[6][5][1] = gridLineH[3][0][1] + fontHeight + 10;
+}
 ///
 ///
 ///
@@ -892,26 +995,16 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
 {
   unsigned long curTime = millis();
   unsigned long priorTime = millis();
-  int textPosition[2] = {5, 0};
-  //int rectPosition[4] = {0, 0, 0, 0};
+  textPosition[0] = 5;
+  textPosition[1] = 0;
   char outStr[255];
   char padStr[3];
   float maxTemp = 0.0F;
   float minTemp = 999.0F;
   // initial clear of screen
-
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
-    int col = 0;
-    int row = 0;
-    tftDisplay.drawWideLine(  cellHorz[0][0][0], cellHorz[0][0][1], cellHorz[0][1][0], cellHorz[0][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  cellHorz[1][0][0], cellHorz[1][0][1], cellHorz[1][1][0], cellHorz[1][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  cellHorz[2][0][0], cellHorz[2][0][1], cellHorz[2][1][0], cellHorz[2][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  cellHorz[3][0][0], cellHorz[3][0][1], cellHorz[3][1][0], cellHorz[3][1][1], 1, TFT_WHITE, TFT_BLACK);
-
-    tftDisplay.drawWideLine(  cellVert[0][0][0], cellVert[0][0][1], cellVert[0][1][0], cellVert[0][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  cellVert[1][0][0], cellVert[1][0][1], cellVert[1][1][0], cellVert[1][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  cellVert[2][0][0], cellVert[2][0][1], cellVert[2][1][0], cellVert[2][1][1], 1, TFT_WHITE, TFT_BLACK);
+  DrawGrid(currentResultCar.tireCount);
 
     sprintf(outStr, "%s %s", currentResultCar.carName.c_str(), currentResultCar.dateTime.c_str());
     #ifdef DEBUG_VERBOSE
@@ -923,14 +1016,16 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
     Serial.print(" ");
     Serial.println(outStr);
     #endif
-    tftDisplay.drawString(outStr, 5, 0, FONT_NUMBER);
+    tftDisplay.setFreeFont(FSS12);
+    tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawString(outStr, 5, 0, GFXFF);
 
     for(int idxTire = 0; idxTire < currentResultCar.tireCount; idxTire++)
     {
-      col = (idxTire % 2);  // 0 or 1
-      row = (idxTire / 2);  // 0 (tires 0 and 1), 1 (tires 2 and 3), or 2  (tires 4 and 5)
-      textPosition[0] = cellVert[col][0][0] + 5;
-      textPosition[1] = cellHorz[row][0][1] + 5;
+      int col = (idxTire % 2);  // 0 or 1
+      //row = (idxTire / 2);  // 0 (tires 0 and 1), 1 (tires 2 and 3), or 2  (tires 4 and 5)
+      //textPosition[0] = gridLineV[col][0][0] + 5;
+      //textPosition[1] = gridLineH[row][0][1] + 5;
       maxTemp = 0.0F;
       for(int tirePosIdx = 0; tirePosIdx < currentResultCar.positionCount; tirePosIdx++)
       {
@@ -950,6 +1045,8 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
       }
       while(true)
       {
+        textPosition[0] = cellPoint[idxTire][tirePosIdx][0];
+        textPosition[1] = cellPoint[idxTire][tirePosIdx][1];
         if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] >= 100.0F)
         {
           padStr[0] = '\0';
@@ -972,23 +1069,23 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
           sprintf(outStr, "%s", currentResultCar.positionShortName[tirePosIdx].c_str());
         }
         tftDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
-        tftDisplay.drawString(outStr, textPosition[0], textPosition[1] - FONT_HEIGHT, FONT_NUMBER);
+        tftDisplay.drawString(outStr, textPosition[0], textPosition[1] - FONT_HEIGHT, GFXFF);
 
         sprintf(outStr, "%3.1F", tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx]);
         if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == maxTemp)
         {
             tftDisplay.setTextColor(TFT_BLACK, TFT_RED);
-            tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+            tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
         }
         else if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == minTemp)
         {
             tftDisplay.setTextColor(TFT_BLACK, TFT_BLUE);
-            tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+            tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
         }
         else
         {
           tftDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
-          tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+          tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
         }
         textPosition[0] +=  75;
         if(col == 0)
@@ -1042,13 +1139,13 @@ void MeasureAllTireTemps()
 {
   unsigned long curTime = millis();
   unsigned long priorTime = millis();
-  int textPosition[2] = {5, 0};
-  //int rectPosition[4] = {0, 0, 0, 0};
   char outStr[255];
   char padStr[3];
   int selTire = 0;
   bool startMeasure = false;
   bool measureDone = false;
+  int row = 0;
+  int col = 0;
 
   float maxTemp = 0.0F;
   float minTemp = 999.0F;
@@ -1063,6 +1160,8 @@ void MeasureAllTireTemps()
 
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
+  DrawGrid(cars[selectedCar].tireCount);
+  
   while(true)
   {
     #ifdef DEBUG_VERBOSE
@@ -1070,63 +1169,46 @@ void MeasureAllTireTemps()
     Serial.print(selTire);
     Serial.println(" or select another tire");
     #endif
-    int col = 0;
-    int row = 0;
-    tftDisplay.drawWideLine(  cellHorz[0][0][0], cellHorz[0][0][1], cellHorz[0][1][0], cellHorz[0][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  cellHorz[1][0][0], cellHorz[1][0][1], cellHorz[1][1][0], cellHorz[1][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  cellHorz[2][0][0], cellHorz[2][0][1], cellHorz[2][1][0], cellHorz[2][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  cellHorz[3][0][0], cellHorz[3][0][1], cellHorz[3][1][0], cellHorz[3][1][1], 1, TFT_WHITE, TFT_BLACK);
-
-    tftDisplay.drawWideLine(  cellVert[0][0][0], cellVert[0][0][1], cellVert[0][1][0], cellVert[0][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  cellVert[1][0][0], cellVert[1][0][1], cellVert[1][1][0], cellVert[1][1][1], 1, TFT_WHITE, TFT_BLACK);
-    tftDisplay.drawWideLine(  cellVert[2][0][0], cellVert[2][0][1], cellVert[2][1][0], cellVert[2][1][1], 1, TFT_WHITE, TFT_BLACK);
-
     sprintf(outStr, "%s", cars[selectedCar].carName.c_str());
     #ifdef DEBUG_VERBOSE
     Serial.print("Measuring car: ");
     Serial.print(cars[selectedCar].carName.c_str());
     Serial.println(outStr);
     #endif
-    tftDisplay.drawString(outStr, 5, 0, FONT_NUMBER);
+    tftDisplay.setFreeFont(FSS12);
+    tftDisplay.setTextDatum(TL_DATUM);
+    tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawString(outStr, 5, 0, GFXFF);
 
     if(!startMeasure)
     {
+      row = cars[selectedCar].tireCount;
+      col = 0;
+
+      // done button
+      if(selTire < cars[selectedCar].tireCount)
+      {
+        DrawCellText(row, col, "DONE", TFT_WHITE, TFT_BLACK);
+      }
+      else
+      {
+        DrawCellText(row, col, "DONE", TFT_BLACK, TFT_YELLOW);
+      }
+      // tires
       for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
       {
-        // done button
-        if(selTire < cars[selectedCar].tireCount)
-        {
-            tftDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
-        }
-        else
-        {
-            tftDisplay.setTextColor( TFT_WHITE, TFT_GREEN);
-        }
-        tftDisplay.drawString("Done", 237, FONT_HEIGHT + 240, FONT_NUMBER);
         // tires
-        col = (idxTire % 2);  // 0 or 1
-        row = (idxTire / 2);  // 0 (tires 0 and 1), 1 (tires 2 and 3), or 2  (tires 4 and 5)
-        textPosition[0] = cellVert[col][0][0] + 5;
-        textPosition[1] = cellHorz[row][0][1] + 5;
+        col = (idxTire % 2);
         maxTemp = 0.0F;
         minTemp = 999.0F;
         for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
         {
           maxTemp = tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] > maxTemp ? tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] : maxTemp;
           minTemp = tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] < minTemp ? tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] : minTemp;
-        }    
-        textPosition[1] +=  FONT_HEIGHT;
-        int tirePosIdx = 0;
-        if(col == 0)
-        {
-          tirePosIdx = 0;
         }
-        else if(col == 1)
+        for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
         {
-          tirePosIdx = cars[selectedCar].positionCount - 1;
-        }
-        while(true)
-        {
+          sprintf(padStr, "  ");
           if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] >= 100.0F)
           {
             padStr[0] = '\0';
@@ -1135,10 +1217,9 @@ void MeasureAllTireTemps()
           {
             sprintf(padStr, " ");
           }
-          else
-          {
-            sprintf(padStr, "  ");
-          }
+		      // draw tire position name
+		      row = ((idxTire / 2) * 2);
+		      col = tirePosIdx + ((idxTire % 2) * 3);
           if(tirePosIdx == 0)
           {
             sprintf(outStr, "%s %s", cars[selectedCar].tireShortName[idxTire].c_str(),
@@ -1148,53 +1229,45 @@ void MeasureAllTireTemps()
           {
             sprintf(outStr, "%s", cars[selectedCar].positionShortName[tirePosIdx].c_str());
           }
+          int fontHeight = tftDisplay.fontHeight(GFXFF);
           if(idxTire == selTire)
           {
-            tftDisplay.setTextColor( TFT_WHITE, TFT_GREEN);
+            // full background highlight rectangle
+            if(tirePosIdx == 0)
+            {
+              int rectCol = col <= 2 ? 0 : 5;
+              tftDisplay.fillRect(cellPoint[row][rectCol][0], cellPoint[row][rectCol][1], 220, fontHeight - 5, TFT_YELLOW);
+            }
+            DrawCellText(row, col, outStr, TFT_BLACK, TFT_YELLOW);
           }
           else
           {
-            tftDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
+            if(tirePosIdx == 0)
+            {
+              int rectCol = col <= 2 ? 0 : 5;
+              tftDisplay.fillRect(cellPoint[row][rectCol][0], cellPoint[row][rectCol][1], 220, fontHeight - 5, TFT_BLACK);
+            }
+            DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLACK);
           }
-          tftDisplay.drawString(outStr, textPosition[0], textPosition[1] - FONT_HEIGHT, FONT_NUMBER);
-          tftDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
-
+          // draw tire temp
+		      row++;
           sprintf(outStr, "%3.1F", tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx]);
           //
           if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] != 0.0F)
           {
             if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] >= maxTemp)
             {
-              tftDisplay.setTextColor( TFT_BLACK, TFT_RED );
+              DrawCellText(row, col, outStr, TFT_BLACK, TFT_RED);
             }
             else if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] <= minTemp)
             {
-              tftDisplay.setTextColor( TFT_BLACK, TFT_BLUE );
+              DrawCellText(row, col, outStr, TFT_BLACK, TFT_BLUE);
             }
             else
             {
-              tftDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
-            }
-            tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
-            tftDisplay.setTextColor( TFT_WHITE, TFT_BLACK);
-          }
-          textPosition[0] +=  75;
-          if(col == 0)
-          {
-            tirePosIdx++;
-            if(tirePosIdx >= cars[selectedCar].positionCount)
-            {
-              break;
+              DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLACK);
             }
           }
-          else if(col == 1)
-          {
-            tirePosIdx--;
-            if(tirePosIdx < 0)
-            {
-              break;
-            }
-          }   
         }
       }
     }
@@ -1203,8 +1276,8 @@ void MeasureAllTireTemps()
     {
       MeasureTireTemps(selTire);
       startMeasure = false;
-      tftDisplay.fillScreen(TFT_BLACK);
-      YamuraBanner();
+      //tftDisplay.fillScreen(TFT_BLACK);
+      //YamuraBanner();
       selTire++;
       selTire = selTire <= cars[selectedCar].tireCount ? selTire : 0;
       continue;
@@ -1262,7 +1335,14 @@ void MeasureAllTireTemps()
       break;
     }
   }
-  // done, copy local to global
+  tftDisplay.fillScreen(TFT_BLACK);
+  textPosition[0] = tftDisplay.width() / 2;
+  textPosition[1] = tftDisplay.height() / 2;
+  tftDisplay.drawString("Done", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += FONT_HEIGHT;
+  tftDisplay.drawString("Storing results...", textPosition[0], textPosition[1], GFXFF);
+  YamuraBanner();
+    // done, copy local to global
   #ifdef HAS_RTC
   UpdateTime();
   cars[selectedCar].dateTime = GetStringTime();
@@ -1324,108 +1404,88 @@ void MeasureAllTireTemps()
   WriteResultsHTML();  
 }
 //
+// grid lines enclose 2 rows of 3 cells each
+// top row is T (tire name) and measure position (O, M, I). This row is highlighted when selected during measure
+// bottom row is the 3 temperatures
+// up to 2 grid cells per axle (for cars) or 2 grid cells for front/rear for motorcycles
+//   ------------------------------------
+//  | T O    M    I    | I    M    T O  |
+//  | temp   temp temp | temp temp temp |
+//   ------------------------------------
+//
+void DrawCellText(int row, int col, char* outStr, uint16_t textColor, uint16_t backColor)
+{
+  tftDisplay.setFreeFont(FSS12);
+  tftDisplay.setTextDatum(TL_DATUM);
+  tftDisplay.setTextColor(textColor, backColor);
+  tftDisplay.drawString(outStr, cellPoint[row][col][0], cellPoint[row][col][1], GFXFF);
+  tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+}
+//
 //
 //
 int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect)
 {
   char outStr[256];
-  int textPosition[2] = {5, 0};
-  //int rectPosition[4] = {0, 0, 0, 0};
-  unsigned long curTime = millis();
+  textPosition[0] = 5;
+  textPosition[1] = 0;
+  currentMillis = millis();
+  // find initial selection
   int selection = initialSelect;
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.println("MenuSelect  choices");
-  #endif
   for(int selIdx = 0; selIdx < menuCount; selIdx++)
   {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.print(choices[selIdx].description);
-    Serial.print(" - ");
-    Serial.println(choices[selIdx].result);
-    #endif
     if(choices[selIdx].result == initialSelect)
     {
       selection = selIdx;
     }
   }
-  String selIndicator = " ";
+  // range of selections to display (allow scrolling)
   int displayRange[2] = {0, linesToDisplay - 1 };
   displayRange[1] = (menuCount < linesToDisplay ? menuCount : linesToDisplay) - 1;
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.print("Display range: ");
-  Serial.print(displayRange[0]);
-  Serial.print(" - ");
-  Serial.println(displayRange[1]);
-  #endif
+  // reset buttons
   for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
   {
     buttons[btnIdx].buttonReleased = false;
   }
+  // erase screen, draw banner
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
+  // loop until selection is made
+  tftDisplay.setFreeFont(FSS18);
+  tftDisplay.setTextDatum(TL_DATUM);
+  int fontHeight = tftDisplay.fontHeight(GFXFF);
   while(true)
   {
     textPosition[0] = 5;
     textPosition[1] = 0;
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.print("Draw Menu - Choices: ");
-    Serial.print(menuCount);
-    Serial.print(" Display Range: ");
-    Serial.print(displayRange[0]);
-    Serial.print(" - ");
-    Serial.print(displayRange[1]);
-    Serial.print(" Current Selection: ");
-    Serial.print(selection);
-    Serial.print(" (");
-    Serial.print(choices[selection].description);
-    Serial.println(")");
-    Serial.println("===========================================");
-    #endif
     for(int menuIdx = displayRange[0]; menuIdx <= displayRange[1]; menuIdx++)
     {
       sprintf(outStr, "%s", choices[menuIdx].description.c_str());
       if(menuIdx == selection)
       {
-        #ifdef DEBUG_EXTRA_VERBOSE
-        Serial.print("*");
-        #endif
         tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
-        tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+        tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
       }
       else
       {
-        #ifdef DEBUG_EXTRA_VERBOSE
-        Serial.print(" ");
-        #endif
         tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
-        tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+        tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
       }
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.println(choices[menuIdx].description);
-      #endif
-      textPosition[1] += FONT_HEIGHT;
+      textPosition[1] += fontHeight;
     }
     while(true)
     {
-      curTime = millis();
-      CheckButtons(curTime);
+      currentMillis = millis();
+      CheckButtons(currentMillis);
       // selection made, set state and break
       if(buttons[0].buttonReleased)
       {
         buttons[0].buttonReleased = false;
-        #ifdef DEBUG_EXTRA_VERBOSE
-        Serial.print("Button 0 released, ");
-        Serial.print("Return selection ");
-        Serial.print(choices[selection].result);
-        #endif
         return choices[selection].result;
       }
-      // change selection, break
+      // change selection down, break
       else if(buttons[1].buttonReleased)
       {
-        #ifdef DEBUG_EXTRA_VERBOSE
-        Serial.print("Button 1 released, ");
-        #endif
         buttons[1].buttonReleased = false;
         selection = (selection + 1) < menuCount ? (selection + 1) : 0;
         // handle loop back to start
@@ -1441,19 +1501,11 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
           displayRange[1] = selection; 
           displayRange[0] = displayRange[1] - linesToDisplay + 1;
         }
-        #ifdef DEBUG_EXTRA_VERBOSE
-        Serial.print("Change selection (down) to ");
-        Serial.print(selection);
-        Serial.print(" ");
-        Serial.println(choices[selection].result);
-        #endif
         break;
       }
+      // change selection up, break
       else if(buttons[2].buttonReleased)
       {
-        #ifdef DEBUG_EXTRA_VERBOSE
-        Serial.print("Button 2 released, ");
-        #endif
         buttons[2].buttonReleased = false;
         selection = (selection - 1) >= 0 ? (selection - 1) : menuCount - 1;
         // handle loop back to start
@@ -1469,29 +1521,14 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
           displayRange[1] = selection; 
           displayRange[0] = displayRange[1] - linesToDisplay + 1;
         }
-        #ifdef DEBUG_EXTRA_VERBOSE
-        Serial.print("Change selection (up) to ");
-        Serial.print(selection);
-        Serial.print(" ");
-        Serial.println(choices[selection].result);
-        #endif
         break;
       }
-      else if(buttons[2].buttonReleased)
+      else if(buttons[3].buttonReleased)
       {
-        #ifdef DEBUG_EXTRA_VERBOSE
-        Serial.print("Button 3 released, no action");
-        #endif
       }
       delay(100);
     }
   }
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.print("Returning selection ");
-  Serial.print(selection);
-  Serial.print(" ");
-  Serial.println(choices[selection].result);
-  #endif
   return choices[selection].result;
 }
 //
@@ -1567,14 +1604,15 @@ void SetDateTime()
   char outStr[256];
   int timeVals[8] = {0, 0, 0, 0, 0, 0, 0, 0};  // date, month, year, day, hour, min, sec, 100ths
   bool isPM = false;
-  int textPosition[2] = {5, 0};
+  textPosition[0] = 5;
+  textPosition[1] = 0;
   int setIdx = 0;
   unsigned long curTime = millis();
   int delta = 0;
   #ifndef HAS_RTC
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
-  tftDisplay.drawString("RTC not present", textPosition[0], textPosition[1], FONT_NUMBER);
+  tftDisplay.drawString("RTC not present", textPosition[0], textPosition[1], GFXFF);
   delay(5000);
   return;
   #endif
@@ -1622,26 +1660,26 @@ void SetDateTime()
     textPosition[1] = 0;
     tftDisplay.fillScreen(TFT_BLACK);
     YamuraBanner();
-    tftDisplay.drawString("Set date/time", textPosition[0], textPosition[1], FONT_NUMBER);
+    tftDisplay.drawString("Set date/time", textPosition[0], textPosition[1], GFXFF);
     
     textPosition[1] += FONT_HEIGHT;
 
     sprintf(outStr, "%02d/%02d/%04d %s", timeVals[DATE], timeVals[MONTH], timeVals[YEAR], days[timeVals[DAY]]);
-    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], FONT_NUMBER);
+    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     if(setIdx < 4)
     {
       textPosition[1] += FONT_HEIGHT;
       sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "dd" : "  "), (setIdx == 1 ? "mm" : "  "), (setIdx == 2 ? "yyyy" : "    "), (setIdx == 3 ? "ww" : "  "));
-      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
     }
     textPosition[1] += FONT_HEIGHT;
     sprintf(outStr, "%02d:%02d %s", timeVals[HOUR], timeVals[MINUTE], (isPM ? "PM" : "AM"));
-    tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+    tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
     if(setIdx > 3)
     {
       textPosition[1] += FONT_HEIGHT;
       sprintf(outStr, "%s %s %s", (setIdx == 4 ? "hh" : "  "), (setIdx == 5 ? "mm" : "  "), (setIdx == 6 ? "ap" : "  "));
-      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], FONT_NUMBER);
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
     }
     
     while(!buttons[0].buttonReleased)
@@ -1796,7 +1834,7 @@ void SetDateTime()
   rtc.setSecond(timeVals[SECOND]);
   rtc.setClockMode(isPM);
   textPosition[1] += FONT_HEIGHT * 2;
-  tftDisplay.drawString(GetStringTime(), textPosition[0], textPosition[1], FONT_NUMBER);
+  tftDisplay.drawString(GetStringTime(), textPosition[0], textPosition[1], GFXFF);
   delay(5000);
 }
 //
@@ -2133,9 +2171,9 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     #endif
     tftDisplay.fillScreen(TFT_BLACK);
     YamuraBanner();
-    tftDisplay.drawString("No results for", 5, 0,  FONT_NUMBER);
-    tftDisplay.drawString(cars[selectedCar].carName.c_str(), 5, FONT_HEIGHT, FONT_NUMBER);
-    tftDisplay.drawString("Select another car", 5, 2* FONT_HEIGHT, FONT_NUMBER);
+    tftDisplay.drawString("No results for", 5, 0,  GFXFF);
+    tftDisplay.drawString(cars[selectedCar].carName.c_str(), 5, FONT_HEIGHT, GFXFF);
+    tftDisplay.drawString("Select another car", 5, 2* FONT_HEIGHT, GFXFF);
     delay(5000);
     return;
   }
@@ -2169,9 +2207,9 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     #endif
     tftDisplay.fillScreen(TFT_BLACK);
     YamuraBanner();
-    tftDisplay.drawString("No results for", 5, 0, FONT_NUMBER);
-    tftDisplay.drawString(cars[selectedCar].carName.c_str(), 5, FONT_HEIGHT, FONT_NUMBER);
-    tftDisplay.drawString("Select another car", 5, 2* FONT_HEIGHT, FONT_NUMBER);
+    tftDisplay.drawString("No results for", 5, 0, GFXFF);
+    tftDisplay.drawString(cars[selectedCar].carName.c_str(), 5, FONT_HEIGHT, GFXFF);
+    tftDisplay.drawString("Select another car", 5, 2* FONT_HEIGHT, GFXFF);
     delay(5000);
     return;
   }
@@ -2813,7 +2851,12 @@ void CheckButtons(unsigned long curTime)
 }
 void YamuraBanner()
 {
-  tftDisplay.setTextColor(TFT_BLACK, TFT_RED);
-  tftDisplay.drawString("      Yamura Recording Tire Pyrometer v1.0      ", 0, DISPLAY_HEIGHT - 30, FONT_NUMBER);
-  tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
+  tftDisplay.setFreeFont(FSS9);     // Select the orginal small GLCD font by using NULL or GLCD
+  int fontHt = tftDisplay.fontHeight(GFXFF);
+  int xPos = tftDisplay.width()/2;
+  int yPos = tftDisplay.height() - fontHt/2;
+  tftDisplay.setTextDatum(BC_DATUM);
+  tftDisplay.drawString("  Yamura Recording Tire Pyrometer v1.0  ",xPos, yPos, GFXFF);    // Print the font name onto the TFT screen
+  tftDisplay.setTextDatum(TL_DATUM);
 }
