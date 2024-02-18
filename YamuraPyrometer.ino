@@ -1238,17 +1238,18 @@ void MeasureAllTireTemps()
           }
         }
       }
-    }
-    // do measurements for tire
-    else
-    {
-      MeasureTireTemps(selTire);
-      startMeasure = false;
-      //tftDisplay.fillScreen(TFT_BLACK);
-      //YamuraBanner();
-      selTire++;
-      selTire = selTire <= cars[selectedCar].tireCount ? selTire : 0;
-      continue;
+    //}
+    //// do measurements for tire
+    //else
+    //{
+      if(selTire < cars[selectedCar].tireCount)
+      {
+        MeasureTireTemps(selTire);
+        startMeasure = false;
+        selTire++;
+        selTire = selTire <= cars[selectedCar].tireCount ? selTire : 0;
+        continue;
+      }
     }
     priorTime = curTime;
     startMeasure = false;
@@ -1304,12 +1305,15 @@ void MeasureAllTireTemps()
     }
   }
   tftDisplay.fillScreen(TFT_BLACK);
-  textPosition[0] = tftDisplay.width() / 2;
-  textPosition[1] = tftDisplay.height() / 2;
-  tftDisplay.drawString("Done", textPosition[0], textPosition[1], GFXFF);
-  textPosition[1] += FONT_HEIGHT;
-  tftDisplay.drawString("Storing results...", textPosition[0], textPosition[1], GFXFF);
   YamuraBanner();
+  tftDisplay.setFreeFont(FSS18);
+  tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  textPosition[0] = 5;
+  textPosition[1] = 5;
+
+  tftDisplay.drawString("Done", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += tftDisplay.fontHeight();
+  tftDisplay.drawString("Storing results...", textPosition[0], textPosition[1], GFXFF);
     // done, copy local to global
   #ifdef HAS_RTC
   UpdateTime();
@@ -1369,6 +1373,8 @@ void MeasureAllTireTemps()
   #ifdef DEBUG_VERBOSE
   Serial.println("Update HTML file...");
   #endif
+  textPosition[1] += tftDisplay.fontHeight();
+  tftDisplay.drawString("Updating HTML...", textPosition[0], textPosition[1], GFXFF);
   WriteResultsHTML();  
 }
 //
