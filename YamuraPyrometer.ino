@@ -49,8 +49,8 @@
 #include <DS3231-RTC.h> // https://github.com/hasenradball/DS3231-RTC
 #endif
 
-// uncomment for debug to serial monitor
-#define DEBUG_VERBOSE
+// uncomment for debug to serial monitor (use #ifdef...#endif around debug output prints)
+//#define DEBUG_VERBOSE
 //#define DEBUG_EXTRA_VERBOSE
 //#define DEBUG_HTML
 // microSD chip select, I2C pins
@@ -232,54 +232,6 @@ void setup()
   char outStr[128];
   Serial.begin(115200);
   
-  #ifdef DEBUG_VERBOSE
-  delay(1000);
-  Serial.println();
-  Serial.println();
-  Serial.println("YamuraLog Recording Tire Pyrometer V1.0");
-  Serial.println("Pin assignments");
-  Serial.println("Buttons");
-  Serial.println("----------------");
-  Serial.print("\tButton 1 ");
-  Serial.println(BUTTON_1);
-  Serial.print("\tButton 2 ");
-  Serial.println(BUTTON_2);
-  Serial.print("\tButton 3 ");
-  Serial.println(BUTTON_3);
-  Serial.print("\tButton 4 ");
-  Serial.println(BUTTON_4);
-
-  Serial.println("SPI bus");
-  Serial.println("-------");
-  Serial.print("\tSCK ");
-  Serial.println(SCK);
-  Serial.print("\tMISO ");
-  Serial.println(MISO);
-  Serial.print("\tMOSI ");
-  Serial.println(MOSI);
-  
-  Serial.println("microSD (SPI)");
-  Serial.println("-------------");
-  Serial.print("\tCS ");
-  Serial.println(sd_CS);  
-  
-  Serial.println("TFT display (SPI)");
-  Serial.println("-----------------");
-  Serial.print("\tTFT_CS ");
-  Serial.println(TFT_CS);  
-  Serial.print("\tTFT_DC ");
-  Serial.println(TFT_DC);  
-  Serial.print("\tTFT_RST ");
-  Serial.println(TFT_RST);  
-  
-  Serial.println("I2C bus");
-  Serial.println("-------");
-  Serial.print("\tI2C_SDA ");
-  Serial.println(I2C_SDA);
-  Serial.print("\tI2C_SCL ");
-  Serial.println(I2C_SCL);
-
-  #endif
   // setup buttons on SX1509
   buttons[0].buttonPin = 12;
   buttons[1].buttonPin = 14;
@@ -307,17 +259,7 @@ void setup()
   tftDisplay.drawString("Yamura Electronics Recording Pyrometer", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   //
-  #ifdef DEBUG_VERBOSE
-  Serial.print("OLED screen size ");
-  Serial.print(tftDisplay.width());
-  Serial.print(" x ");
-  Serial.print(tftDisplay.height());
-  Serial.println("");
-  #endif
   // start I2C
-  #ifdef DEBUG_VERBOSE
-  Serial.println("Start I2C");
-  #endif
   int sda = I2C_SDA;
   int scl = I2C_SCL;
   pinMode(sda, OUTPUT);
@@ -331,172 +273,89 @@ void setup()
   //else 
   while(!tempSensor.isConnected())
   {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("Thermocouple did not acknowledge! Freezing.");
-    #endif
     tftDisplay.drawString("Thermocouple FAIL", textPosition[0], textPosition[1], GFXFF);
     delay(5000);
   }
   //check if the sensor is connected
-  #ifdef DEBUG_VERBOSE
-  Serial.println("Thermocouple Device acknowledged!");
-  #endif
   tftDisplay.drawString("Thermocouple OK", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   delay(1000);
   //check if the Device ID is correct
-  if(tempSensor.checkDeviceID())
+  if(!tempSensor.checkDeviceID())
   {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("Thermocouple ID is correct!");        
-    #endif
-  }
-  else 
-  {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("Thermocouple ID is not correct! Freezing.");
-    #endif
     while(1);
   }
   //change the thermocouple type being used
-  #ifdef DEBUG_VERBOSE
-  Serial.print("Current Thermocouple Type: ");
-  #endif
   switch(tempSensor.getThermocoupleType())
   {
     case 0b000:
-      #ifdef DEBUG_VERBOSE
-      Serial.println("K Type");
-      #endif
+      tftDisplay.drawString("K Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
+      textPosition[1] += fontHeight;
       break;
     case 0b001:
-      #ifdef DEBUG_VERBOSE
-      Serial.println("J Type");
-      #endif
+      tftDisplay.drawString("J Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
+      textPosition[1] += fontHeight;
       break;
     case 0b010:
-      #ifdef DEBUG_VERBOSE
-      Serial.println("T Type");
-      #endif
+      tftDisplay.drawString("T Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
+      textPosition[1] += fontHeight;
       break;
     case 0b011:
-      #ifdef DEBUG_VERBOSE
-      Serial.println("N Type");
-      #endif
+      tftDisplay.drawString("N Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
+      textPosition[1] += fontHeight;
       break;
     case 0b100:
-      #ifdef DEBUG_VERBOSE
-      Serial.println("S Type");
-      #endif
+      tftDisplay.drawString("S Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
+      textPosition[1] += fontHeight;
       break;
     case 0b101:
-      #ifdef DEBUG_VERBOSE
-      Serial.println("E Type");
-      #endif
+      tftDisplay.drawString("E Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
+      textPosition[1] += fontHeight;
       break;
     case 0b110:
-      #ifdef DEBUG_VERBOSE
-      Serial.println("B Type");
-      #endif
+      tftDisplay.drawString("B Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
+      textPosition[1] += fontHeight;
       break;
     case 0b111:
-      #ifdef DEBUG_VERBOSE
-      Serial.println("R Type");
-      #endif
+      tftDisplay.drawString("R Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
+      textPosition[1] += fontHeight;
       break;
     default:
-      #ifdef DEBUG_VERBOSE
-      Serial.println("Unknown Thermocouple Type");
-      #endif
+      tftDisplay.drawString("Unknown Thermocouple type", textPosition[0], textPosition[1], GFXFF);
+      textPosition[1] += fontHeight;
       break;
   }
   if(tempSensor.getThermocoupleType() != TYPE_K)
   {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("Setting Thermocouple Type to K (0b000)");
-    #endif
+    tftDisplay.drawString("Setting to K Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
+    textPosition[1] += fontHeight;
     tempSensor.setThermocoupleType(TYPE_K);
     //make sure the type was set correctly!
-    if(tempSensor.getThermocoupleType() == TYPE_K)
+    if(!tempSensor.getThermocoupleType() == TYPE_K)
     {
-      #ifdef DEBUG_VERBOSE
-      Serial.println("Thermocouple Type set sucessfully!");
-      #endif
-    }
-    else
-    {
-      #ifdef DEBUG_VERBOSE
-      Serial.println("Setting Thermocouple Type failed!");
-      #endif
+      tftDisplay.drawString("Failed to set to K Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
+      textPosition[1] += fontHeight;
     }
   }
-  #ifdef DEBUG_VERBOSE
-  Serial.print("Ambient resolution ");
-  #endif
   switch(tempSensor.getAmbientResolution())
   {
     case RES_ZERO_POINT_0625:
-      #ifdef DEBUG_VERBOSE
-      Serial.print(" 0.0625C / 0.1125F");
-      #endif
       tempRes = 0.1125;
       break;
     case RES_ZERO_POINT_25:
-      #ifdef DEBUG_VERBOSE
-      Serial.print(" 0.25 C / 0.45F");
-      #endif
       tempRes = 0.45;
       break;
     default:
-      #ifdef DEBUG_VERBOSE
-      Serial.print(" unknown ");
-      #endif
-      break;
-  }
-  #ifdef DEBUG_VERBOSE
-  Serial.print(" Thermocouple resolution ");
-  #endif
-  switch(tempSensor.getThermocoupleResolution())
-  {
-    case RES_12_BIT:
-      #ifdef DEBUG_VERBOSE
-      Serial.print(" 12 bit");
-      #endif
-      break;
-    case RES_14_BIT:
-      #ifdef DEBUG_VERBOSE
-      Serial.print(" 14 bit");
-      #endif
-      break;
-    case RES_16_BIT:
-      #ifdef DEBUG_VERBOSE
-      Serial.print(" 16 bit");
-      #endif
-      break;
-    case RES_18_BIT:
-      #ifdef DEBUG_VERBOSE
-      Serial.print(" 18 bit");
-      #endif
-      break;
-    default:
-      #ifdef DEBUG_VERBOSE
-      Serial.print(" unknown ");
-      #endif
+      tempRes = 0.45;
       break;
   }
   #ifdef HAS_RTC
   #ifndef HILETGO_DS3231
     if (rtc.begin() == false) 
     {
-      #ifdef DEBUG_VERBOSE
-      Serial.println("RTC not initialized, check wiring");
-      #endif
       tftDisplay.drawString("RTC FAIL", textPosition[0], textPosition[1], GFXFF);
       while(true);
     }
-    #ifdef DEBUG_VERBOSE
-    Serial.println("RTC online!");
-    #endif
     delay(1000);
   #endif
   #endif
@@ -506,20 +365,11 @@ void setup()
   Serial.println("Button setup");
   for(int idx = 0; idx < BUTTON_COUNT; idx++)
   {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.print("Button ");
-    Serial.print(idx);
-    Serial.print(" Pin ");
-    Serial.println(buttons[idx].buttonPin);
-    #endif
     pinMode(buttons[idx].buttonPin, INPUT_PULLUP);
   }
 
   if(!SD.begin(sd_CS))
   {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("microSD card mount Failed");
-    #endif
     tftDisplay.drawString("microSD card mount failed", textPosition[0], textPosition[1], GFXFF);
     while(true);
   }
@@ -528,48 +378,12 @@ void setup()
   uint8_t cardType = SD.cardType();
   if(cardType == CARD_NONE)
   {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("No SD card attached");
-    #endif
     return;
   }
-  #ifdef DEBUG_VERBOSE
-  Serial.print("SD Card Type: ");
-  #endif
-  if(cardType == CARD_MMC)
-  {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("MMC");
-    #endif
-  }
-  else if(cardType == CARD_SD)
-  {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("SDSC");
-    #endif
-  }
-  else if(cardType == CARD_SDHC)
-  {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("SDHC");
-    #endif
-  } 
-  else 
-  {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("UNKNOWN");
-    #endif
-  }
   uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-  #ifdef DEBUG_VERBOSE
-  Serial.printf("SD Card Size: %lluMB\n", cardSize);
-  #endif
   // uncomment to write a default setup file
   // maybe check for setup and write one if needed?
   #ifdef WRITE_INI
-  #ifdef DEBUG_VERBOSE
-  Serial.println("Write setup file");
-  #endif
   DeleteFile(SD, "/py_setup.txt");
   WriteSetupFile(SD, "/py_setup.txt");
   #endif
@@ -577,18 +391,9 @@ void setup()
 
   ResetTempStable();
 
-  #ifdef DEBUG_VERBOSE
-  Serial.println();
-  Serial.println("Ready!");
-  #endif
   #ifdef HAS_RTC
   //Updates the time variables from RTC
-  if (UpdateTime() == false) 
-  {
-    #ifdef DEBUG_VERBOSE
-    Serial.print("RTC failed to update");
-    #endif
-  }
+  UpdateTime();
   #endif
   #ifdef HAS_RTC
   sprintf(outStr, "%s %s", GetStringTime().c_str(), GetStringDate().c_str());
@@ -601,23 +406,11 @@ void setup()
   WriteResultsHTML();
   WiFi.softAP(ssid, pass);
   IP = WiFi.softAPIP();
-  #ifdef DEBUG_VERBOSE
-  Serial.print("AP IP address: ");
-  Serial.println(IP);
-  Serial.print(ssid);
-  Serial.print(" ");
-  Serial.println(pass);
-  #endif
   server.on("/", HTTP_GET, handleRoot);
   server.onNotFound(handleNotFound);
   wsServoInput.onEvent(onServoInputWebSocketEvent);
   server.addHandler(&wsServoInput);
   server.begin();
-  #ifdef DEBUG_VERBOSE
-  Serial.print(IP);
-  Serial.print(" ");
-  Serial.println(pass);
-  #endif
   server.on("/", HTTP_GET, handleRoot);
   server.onNotFound(handleNotFound);
   wsServoInput.onEvent(onServoInputWebSocketEvent);
@@ -629,10 +422,6 @@ void setup()
   sprintf(outStr, "Password %s", pass);
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
-  #ifdef DEBUG_VERBOSE
-  Serial.println("HTTP server started");
-  Serial.println(outStr);
-  #endif
   delay(5000);
 }
 //
@@ -714,12 +503,6 @@ int MeasureTireTemps(int tireIdx)
   unsigned long priorTime = millis();
   unsigned long curTime = millis();
   // text position on OLED screen
-  #ifdef DEBUG_VERBOSE
-  Serial.print("Start tire measurement for ");
-  Serial.print(cars[selectedCar].carName.c_str());
-  Serial.print(" tire ");
-  Serial.println(cars[selectedCar].tireLongName[tireIdx].c_str());
-  #endif
   // measuring until all positions are measured
   while(true)
   {
@@ -730,12 +513,6 @@ int MeasureTireTemps(int tireIdx)
     // prior to arm, display ****, after display temp as it stabilizes
     if (buttons[0].buttonReleased)
     {
-      #ifdef DEBUG_VERBOSE
-      Serial.print("Armed tire ");
-      Serial.print(tireIdx);
-      Serial.print(" position ");
-      Serial.println(measIdx);
-      #endif
       armed = true;
       buttons[0].buttonReleased = false;
     }
@@ -768,12 +545,6 @@ int MeasureTireTemps(int tireIdx)
       // armed, save the temp and go to next position
       if(armed)
       {
-        #ifdef DEBUG_VERBOSE
-        Serial.print("Save temp tire ");
-        Serial.print(tireIdx);
-        Serial.print(" position ");
-        Serial.println(measIdx);
-        #endif
         measIdx++;
         // done measuring
         if(measIdx == cars[selectedCar].positionCount)
@@ -822,16 +593,6 @@ int MeasureTireTemps(int tireIdx)
       }
     }
   }
-  #ifdef DEBUG_VERBOSE
-  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
-  {
-    for(int idxMeas = 0; idxMeas < cars[selectedCar].positionCount; idxMeas++)
-    {
-      Serial.println(tireTemps[(idxTire * cars[selectedCar].positionCount) + idxMeas]);
-    }
-  }
-  Serial.println("End tire measurement");
-  #endif
   return 1;
 }
 ///
@@ -863,10 +624,6 @@ void InstantTemp()
       instant_temp = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
       #else
       instant_temp = 100.0F;
-      #endif
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.print("Instant temp ");
-      Serial.println(instant_temp);
       #endif
       sprintf(outStr, "%0.2f", instant_temp);
       tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
@@ -1030,15 +787,6 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
   DrawGrid(currentResultCar.tireCount);
 
   sprintf(outStr, "%s %s", currentResultCar.carName.c_str(), currentResultCar.dateTime.c_str());
-  #ifdef DEBUG_VERBOSE
-  Serial.print("Results for car: ");
-  Serial.print(currentResultCar.carName.c_str());
-  Serial.print(" ");
-  Serial.print(" on ");
-  Serial.print(currentResultCar.dateTime.c_str());
-  Serial.print(" ");
-  Serial.println(outStr);
-  #endif
   tftDisplay.setFreeFont(FSS12);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
   tftDisplay.drawString(outStr, 5, 0, GFXFF);
@@ -1153,17 +901,7 @@ void MeasureAllTireTemps()
   
   while(true)
   {
-    #ifdef DEBUG_VERBOSE
-    Serial.print("Measure tire ");
-    Serial.print(selTire);
-    Serial.println(" or select another tire");
-    #endif
     sprintf(outStr, "%s", cars[selectedCar].carName.c_str());
-    #ifdef DEBUG_VERBOSE
-    Serial.print("Measuring car: ");
-    Serial.print(cars[selectedCar].carName.c_str());
-    Serial.println(outStr);
-    #endif
     tftDisplay.setFreeFont(FSS12);
     tftDisplay.setTextDatum(TL_DATUM);
     tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -1284,9 +1022,6 @@ void MeasureAllTireTemps()
       {
         if(selTire < cars[selectedCar].tireCount)
         {
-          #ifdef DEBUG_VERBOSE
-          Serial.println("Start MEARURE");
-          #endif
           startMeasure = true;
         }
         else
@@ -1299,18 +1034,12 @@ void MeasureAllTireTemps()
       // cancel button released, return
       else if (buttons[1].buttonReleased)
       {
-        #ifdef DEBUG_VERBOSE
-        Serial.println("Select NEXT tire");
-        #endif
         selTire = GetNextTire(selTire, 1);
         buttons[1].buttonReleased = false;
         break;
       }
       else if ((buttons[2].buttonReleased)) 
       {
-        #ifdef DEBUG_VERBOSE
-        Serial.println("Select PRIOR tire");
-        #endif
         selTire = GetNextTire(selTire, -1);
         buttons[2].buttonReleased = false;
         break;
@@ -1374,23 +1103,12 @@ void MeasureAllTireTemps()
     fileLine += ';';
     fileLine += cars[selectedCar].maxTemp[idxTire];
   }
-  #ifdef DEBUG_VERBOSE
-  Serial.println(fileLine);
-  Serial.println("Add to results file...");
-  #endif
   
   sprintf(outStr, "/py_temps_%d.txt", selectedCar);
   
-  #ifdef DEBUG_VERBOSE
-  Serial.print("Write results to: ");
-  Serial.println(outStr);
-  #endif
 
   AppendFile(SD, outStr, fileLine.c_str());
   // update the HTML file
-  #ifdef DEBUG_VERBOSE
-  Serial.println("Update HTML file...");
-  #endif
   textPosition[1] += tftDisplay.fontHeight();
   tftDisplay.drawString("Updating HTML...", textPosition[0], textPosition[1], GFXFF);
   WriteResultsHTML();  
@@ -1409,39 +1127,24 @@ int GetNextTire(int selTire, int nextDirection)
   {
     if(selTire < 0)
     {
-Serial.println("backward past tire 0, select 'done'");
       selTire = cars[selectedCar].tireCount;
     }
     if(selTire > cars[selectedCar].tireCount)
     {
-Serial.println("forward past done, select tire 0");
       selTire = 0;
     }
-    Serial.print("next tire ");
-    Serial.println(selTire);
+	// stop on 'done'
     if(selTire == cars[selectedCar].tireCount)
     {
-      Serial.println("go to DONE");
       break;
     }
-    Serial.println();
-    Serial.print("first temp for car ");
-    Serial.print(selectedCar);
-    Serial.print(" tire ");
-    Serial.print(selTire);
-    Serial.print(" ");
-    Serial.println(tireTemps[(selTire * cars[selectedCar].positionCount)]);
+	// stop on first measure of selTire == 0.0 (never measured)
     if (tireTemps[(selTire * cars[selectedCar].positionCount)] == 0.0)
     {
-      Serial.print("go to tire ");
-      Serial.println(selTire);
       break;
     }
-    Serial.println("next tire already measured! skip!");
     selTire += nextDirection;
   }
-  Serial.print("start measuring tire ");
-  Serial.println(selTire);
   return selTire;
 }
 //
@@ -1584,12 +1287,6 @@ void SelectCar()
     choices[idx].result = idx; 
   }
   selectedCar =  MenuSelect(choices, carCount, MAX_DISPLAY_LINES, 0); 
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.print("Selected car from SelectCar() ") ;
-  Serial.print(selectedCar) ;
-  Serial.print(" ") ;
-  Serial.println(cars[selectedCar].carName.c_str());
-  #endif
 }
 //
 //
@@ -1658,12 +1355,7 @@ void SetDateTime()
   return;
   #endif
 
-  if (UpdateTime() == false) 
-  {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.print("RTC failed to update");
-    #endif
-  }
+  UpdateTime();
   timeVals[DATE] = rtc.getDate();
   timeVals[MONTH] = rtc.getMonth(century);
   if (century) 
@@ -1674,23 +1366,6 @@ void SetDateTime()
   timeVals[HOUR] = rtc.getHour(h12Flag, isPM);
   timeVals[MINUTE] = rtc.getMinute();
   //isPM = rtc.isPM();
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.print("GET Date/Time DATE: ");
-  Serial.print(timeVals[DATE]);
-  Serial.print(" MONTH: ");
-  Serial.print(timeVals[MONTH]);
-  Serial.print(" DAY OF WEEK: ");
-  Serial.print(timeVals[DAY]);
-  Serial.print(" YEAR: ");
-  Serial.print(timeVals[YEAR]);
-  Serial.print(" HOUR: ");
-  Serial.print(timeVals[HOUR]);
-  Serial.print(" MINUTE: ");
-  Serial.print(timeVals[MINUTE]);
-  Serial.print(" AM/PM: ");
-  Serial.print(isPM ? "PM" : "AM");
-  Serial.println();
-  #endif
   for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
   {
     buttons[btnIdx].buttonReleased = false;
@@ -1842,23 +1517,6 @@ void SetDateTime()
       timeVals[HOUR] += 12;
     }
   }
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.print("SET Date/Time DATE: ");
-  Serial.print(timeVals[DATE]);
-  Serial.print(" MONTH: ");
-  Serial.print(timeVals[MONTH]);
-  Serial.print(" DAY OF WEEK: ");
-  Serial.print(timeVals[DAY]);
-  Serial.print(" YEAR: ");
-  Serial.print(timeVals[YEAR]);
-  Serial.print(" HOUR: ");
-  Serial.print(timeVals[HOUR]);
-  Serial.print(" MINUTE: ");
-  Serial.print(timeVals[MINUTE]);
-  Serial.print(" AM/PM: ");
-  Serial.print(isPM ? "PM" : "AM");
-  Serial.println();
-  #endif
   if (century) 
   {
     rtc.setYear(timeVals[YEAR] - 2100);
@@ -1893,9 +1551,6 @@ void DeleteDataFile(bool verify)
   }
   if(menuResult == 1)
   {
-    #ifdef DEBUG_HTML
-    Serial.println("Delete data and html files");
-    #endif
     int dataIdx = 0;
     char nameBuf[128];
     for(int dataIdx = 0; dataIdx < 100; dataIdx++)
@@ -1903,23 +1558,12 @@ void DeleteDataFile(bool verify)
       sprintf(nameBuf, "/py_temps_%d.txt", dataIdx);
       if(!SD.exists(nameBuf))
       {
-        #ifdef DEBUG_EXTRA_VERBOSE
-        Serial.print(nameBuf);
-        Serial.println(" does not exist");
-        #endif
         continue;
       }
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.print(nameBuf);
-      Serial.println(" deleted");
-      #endif
       DeleteFile(SD, nameBuf);
     }
     DeleteFile(SD, "/py_res.html");
     // create the HTML header
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.println("Write empty html");
-    #endif
     WriteResultsHTML();
   }
 }
@@ -1963,17 +1607,9 @@ void ResetTempStable()
 //
 void ReadSetupFile(fs::FS &fs, const char * path)
 {
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.print("Read setup file ");
-  Serial.println(path);
-  Serial.printf("Reading file: %s\n", path);
-  #endif
   File file = fs.open(path, FILE_READ);
   if(!file)
   {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.println("Failed to open file for reading");
-    #endif
     return;
   }
   ReadLine(file, buf);
@@ -2022,57 +1658,15 @@ void ReadSetupFile(fs::FS &fs, const char * path)
   }
   selectedCar = 0;
   file.close();
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.println();
-  Serial.println("Cars Structure:");
-  Serial.println("===============");
-  Serial.print("Defined cars ");
-  Serial.println(carCount);
-  Serial.println("===============");
-  for(int carIdx = 0; carIdx < carCount; carIdx++)
-  {
-    Serial.print("Car: ");
-    Serial.println(cars[carIdx].carName.c_str());
-    Serial.print("Tires (");
-    Serial.print(cars[carIdx].tireCount);
-    Serial.println(")");
-    for(int idx = 0; idx < cars[carIdx].tireCount; idx++)
-    {
-      Serial.print(cars[carIdx].tireShortName[idx]);
-      Serial.print(" ");
-      Serial.print(cars[carIdx].tireLongName[idx]);
-      Serial.print(" ");
-      Serial.println(cars[carIdx].maxTemp[idx]);
-    }
-
-    Serial.print("Measurements (");
-    Serial.print(cars[carIdx].positionCount);
-    Serial.println(")");
-    for(int idx = 0; idx <  cars[carIdx].positionCount; idx++)
-    {
-      Serial.print(cars[carIdx].positionShortName[idx]);
-      Serial.print(" ");
-      Serial.println(cars[carIdx].positionLongName[idx]);
-    }
-    Serial.println("=====");
-  }
-  #endif
-  file.close();
 }
 //
 //
 //
 void WriteSetupFile(fs::FS &fs, const char * path)
 {
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.printf("Writing setup file: %s\n", path);
-  #endif
   File file = fs.open(path, FILE_WRITE);
   if(!file)
   {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.println("Failed to open file for writing");
-    #endif
     return;
   }
   file.println("5");            // number of cars
@@ -2185,9 +1779,6 @@ void WriteSetupFile(fs::FS &fs, const char * path)
   file.println("=========="); 
 
   file.close();
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.println("File written");
-  #endif
 }
 //
 //
@@ -2207,9 +1798,6 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
   File file = SD.open(path, FILE_READ);
   if(!file)
   {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.println("Failed to open file for reading");
-    #endif
     tftDisplay.fillScreen(TFT_BLACK);
     YamuraBanner();
     tftDisplay.drawString("No results for", 5, 0,  GFXFF);
@@ -2227,12 +1815,6 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
       break;
     }
     token = strtok(buf, ";");
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.print("result (");
-    Serial.print(menuCnt);
-    Serial.print(") ");
-    Serial.println(token);
-    #endif
     choices[menuCnt].description = token;      choices[menuCnt].result = menuCnt;
     menuCnt++;
   }
@@ -2243,9 +1825,6 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
   file = SD.open(path, FILE_READ);
   if(!file)
   {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.println("Failed to open file for reading");
-    #endif
     tftDisplay.fillScreen(TFT_BLACK);
     YamuraBanner();
     tftDisplay.drawString("No results for", 5, 0, GFXFF);
@@ -2297,12 +1876,7 @@ void WriteResultsHTML()
   CarSettings currentResultCar;
   File fileIn;
   // create a new HTML file
-  if(!SD.remove("/py_res.html"))
-  {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.print("failed to delete /py_res.html");
-    #endif
-  }
+  SD.remove("/py_res.html");
   AppendFile(SD, "/py_res.html", "<!DOCTYPE html>");
   AppendFile(SD, "/py_res.html", "<html>");
   AppendFile(SD, "/py_res.html", "<head>");
@@ -2324,16 +1898,8 @@ void WriteResultsHTML()
     fileIn = SD.open(nameBuf, FILE_READ);
     if(!fileIn)
     {
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.print(nameBuf);
-      Serial.println(" failed to open for reading");
-      #endif
       continue;
     }
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.print(nameBuf);
-    Serial.println(" opened for reading");
-    #endif
     bool outputSubHeader = true;
     while(true)
     {
@@ -2354,55 +1920,29 @@ void WriteResultsHTML()
           for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
           {
             sprintf(buf, "<td>%s-%s</td>", currentResultCar.tireShortName[t_idx].c_str(), currentResultCar.positionShortName[p_idx].c_str());
-            #ifdef DEBUG_HTML
-            Serial.println(buf);
-            #endif
             AppendFile(SD, "/py_res.html", buf);
           }
         }
         AppendFile(SD, "/py_res.html", "        </tr>");
       }
       outputSubHeader = false;
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.println("begin new row");
-      #endif
       rowCount++;
       AppendFile(SD, "/py_res.html", "		    <tr>");
       sprintf(buf, "<td>%s</td>", currentResultCar.dateTime.c_str());
       AppendFile(SD, "/py_res.html", buf);
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.print("date time ");
-      Serial.println(buf);
-      #endif
       sprintf(buf, "<td>%s</td>", currentResultCar.carName.c_str());
       AppendFile(SD, "/py_res.html", buf);
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.print("car ");
-      Serial.println(buf);
-      #endif
       for(int t_idx = 0; t_idx < currentResultCar.tireCount; t_idx++)
       {
         tireMin =  999.9;
         tireMax = -999.9;
         //sprintf(buf, "<td>%s</td>", currentResultCar.tireShortName[t_idx].c_str());
-        #ifdef DEBUG_EXTRA_VERBOSE
-        Serial.print("tire ");
-        Serial.println(buf);
-        #endif
         // get min/max temps
         for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
         {
           tireMin = tireMin < tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] ? tireMin : tireTemps[(t_idx * currentResultCar.positionCount) + p_idx];
           tireMax = tireMax > tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] ? tireMax : tireTemps[(t_idx * currentResultCar.positionCount) + p_idx];
         }
-        #ifdef DEBUG_EXTRA_VERBOSE
-        Serial.print("tire temp range ");
-        Serial.print(tireMin);
-        Serial.print(" - ");
-        Serial.println(tireMax);
-        Serial.print(" overheat ");
-        Serial.println(currentResultCar.maxTemp[t_idx]);
-        #endif
         // add cells to file
         for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
         {
@@ -2422,51 +1962,25 @@ void WriteResultsHTML()
           {
             sprintf(buf, "<td>%0.2f</td>", /*currentResultCar.positionShortName[p_idx].c_str(),*/ tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
           }
-          #ifdef DEBUG_EXTRA_VERBOSE
-          Serial.print("tire ");
-          Serial.print(t_idx);
-          Serial.print("position ");
-          Serial.print(p_idx);
-          Serial.print(" ");
-          Serial.println(buf);
-          #endif
           AppendFile(SD, "/py_res.html", buf);
         }
       }
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.println("end of row");
-      #endif
       AppendFile(SD, "/py_res.html", "		    </tr>");
     }
   }
   if(rowCount == 0)
   {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.println("empty data file - begin blank row");
-    #endif
     rowCount++;
     AppendFile(SD, "/py_res.html", "		    <tr>");
     sprintf(buf, "<td>---</td>");
     AppendFile(SD, "/py_res.html", buf);
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.print("date time ");
-    Serial.println(buf);
-    #endif
     sprintf(buf, "<td>---</td>");
     AppendFile(SD, "/py_res.html", buf);
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.print("car ");
-    Serial.println(buf);
-    #endif
     for(int t_idx = 0; t_idx < 4; t_idx++)
     {
       tireMin =  999.9;
       tireMax = -999.9;
       sprintf(buf, "<td>---</td>");
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.print("tire ");
-      Serial.println(buf);
-      #endif
       AppendFile(SD, "/py_res.html", buf);
       // add cells to file
       for(int p_idx = 0; p_idx < 3; p_idx++)
@@ -2475,14 +1989,8 @@ void WriteResultsHTML()
         AppendFile(SD, "/py_res.html", buf);
       }
     }
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.println("end of row");
-    #endif
     AppendFile(SD, "/py_res.html", "		    </tr>");
   }
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.println("end of file");
-  #endif
   fileIn.close();
   AppendFile(SD, "/py_res.html", "    </table>");
   AppendFile(SD, "/py_res.html", "</body>");
@@ -2541,29 +2049,16 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
   token = strtok(buf, ";");
   while(token != NULL)
   {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.print("Current token ");
-    Serial.print(tokenIdx);
-    Serial.print(" >>>>");
-    Serial.print(token);
-    Serial.println("<<<< ");
-    #endif
     // tokenIdx 0 is date/time
     // 0 - timestamp
     if(tokenIdx == 0)
     {
       currentResultCar.dateTime = token;      
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.println("Timestamp");
-      #endif
     }
     // 1 - car info
     if(tokenIdx == 1)
     {
       currentResultCar.carName = token;
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.println(" car");
-      #endif
     }
     // 2 - tire count
     else if(tokenIdx == 2)
@@ -2572,9 +2067,6 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
       currentResultCar.tireShortName = new String[currentResultCar.tireCount];
       currentResultCar.tireLongName = new String[currentResultCar.tireCount];
       currentResultCar.maxTemp = (float*)calloc(currentResultCar.tireCount, sizeof(float));
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.println(" tires");
-      #endif
     }
     // 3 - position count
     else if(tokenIdx == 3)
@@ -2591,21 +2083,12 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
       posNameRange[1]  = posNameRange[0] + currentResultCar.positionCount;                                    // < 21 + 3 (24)
       maxTempRange[0]  = posNameRange[1];                                                                    // >= 21
       maxTempRange[1]  = maxTempRange[0] + currentResultCar.tireCount;                                    // < 21 + 3 (24)
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.println(" positions");
-      #endif
     }
     // tire temps
     else if((tokenIdx >= measureRange[0]) && (tokenIdx <= measureRange[1]))
     {
       tireTemps[measureIdx] = atof(token);
       currentTemps[measureIdx] = tireTemps[measureIdx];
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.print(" tireTemps[");
-      Serial.print(measureIdx);
-      Serial.print("] = ");
-      Serial.println(currentTemps[measureIdx]);
-      #endif
       measureIdx++;
     }
     // tire names
@@ -2613,9 +2096,6 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
     {
       currentResultCar.tireShortName[tireIdx] = token;
       currentResultCar.tireLongName[tireIdx] = token;
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.println(" tire name");
-      #endif
       tireIdx++;
     }
     // position names
@@ -2624,18 +2104,12 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
       currentResultCar.positionShortName[positionIdx] = token;
       currentResultCar.positionLongName[positionIdx] = token;
       positionIdx++;
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.println(" position name");
-      #endif
     }
     // max temps
     else if((tokenIdx >= maxTempRange[0]) && (tokenIdx <= maxTempRange[1]))
     {
       currentResultCar.maxTemp[maxTempIdx] = atof(token);
       maxTempIdx++;
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.println(" max temp value");
-      #endif
     }
     token = strtok(NULL, ";");
     tokenIdx++;
@@ -2668,9 +2142,6 @@ void ReadLine(File file, char* buf)
     bufIdx++;
     buf[bufIdx] = '\0';
   } while (c != 0x10);
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.println(buf);
-  #endif
   return;
 }
 //
@@ -2678,33 +2149,12 @@ void ReadLine(File file, char* buf)
 //
 void AppendFile(fs::FS &fs, const char * path, const char * message)
 {
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.printf("Appending to file: %s\n", path);
-  #endif
   File file = fs.open(path, FILE_APPEND);
   if(!file)
   {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.println("Failed to open file for appending");
-    #endif
     return;
   }
-  if(file.println(message))
-  {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.println("Message appended");
-    #endif
-    #ifdef DEBUG_HTML
-    Serial.print("Message appended ");
-    Serial.println(message);
-    #endif 
-  }
-  else 
-  {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.println("Append failed");
-    #endif
-  }
+  file.println(message);
   file.close();
 }
 //
@@ -2712,30 +2162,13 @@ void AppendFile(fs::FS &fs, const char * path, const char * message)
 //
 void DeleteFile(fs::FS &fs, const char * path)
 {
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.printf("Deleting file: %s\n", path);
-  #endif
-  if(fs.remove(path))
-  {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.println("File deleted");
-    #endif
-  }
-  else 
-  {
-    #ifdef DEBUG_EXTRA_VERBOSE
-    Serial.println("Delete failed");
-    #endif
-  }
+  fs.remove(path);
 }
 //
 //
 //
 void handleRoot(AsyncWebServerRequest *request) 
 {
-  #ifdef DEBUG_EXTRA_VERBOSE
-  Serial.println("send HOMEPAGE");
-  #endif
   request->send_P(200, "text/html", htmlStr.c_str());
 }
 //
@@ -2758,14 +2191,8 @@ void onServoInputWebSocketEvent(AsyncWebSocket *server,
   switch (type) 
   {
     case WS_EVT_CONNECT:
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
-      #endif
       break;
     case WS_EVT_DISCONNECT:
-      #ifdef DEBUG_EXTRA_VERBOSE
-      Serial.printf("WebSocket client #%u disconnected\n", client->id());
-      #endif
       break;
     case WS_EVT_DATA:
       break;
