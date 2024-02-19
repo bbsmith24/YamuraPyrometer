@@ -207,7 +207,7 @@ void SetUnits();
 void ChangeSettings();
 void SelectCar();
 int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect);
-void MeasureTireTemps(int tire);
+int MeasureTireTemps(int tire);
 void DisplayAllTireTemps(CarSettings currentResultCar);
 void MeasureAllTireTemps();
 void DisplayMenu();
@@ -217,6 +217,7 @@ void YamuraBanner();
 void DrawGrid(int tireCount);
 void DrawCellText(int row, int col, char* text, uint16_t textColor, uint16_t backColor);
 void SetupGrid(const GFXfont* font);
+int GetNextTire(int selTire, int nextDirection);
 //
 // 
 //
@@ -693,11 +694,13 @@ void DisplayMenu()
 // measure temperatures on a single tire
 // called by MeasureAllTireTemps
 //
-void MeasureTireTemps(int tireIdx)
+int MeasureTireTemps(int tireIdx)
 {
   char outStr[512];
   textPosition[0] = 5;
   textPosition[1] = 0;
+  int row = 0;
+  int col = 0;
   bool armed = false;
   // measure location - O, M, I
   measIdx = 0;  
@@ -736,11 +739,28 @@ void MeasureTireTemps(int tireIdx)
       armed = true;
       buttons[0].buttonReleased = false;
     }
-    // cancel button released, return
-    if (buttons[1].buttonReleased)
+    // only before measure starts, back/forward button returns without starting measurement
+    for(int btnIdx = 1; btnIdx < BUTTON_COUNT; btnIdx++)
     {
-      buttons[1].buttonReleased = false;
-      return;
+      if ((buttons[btnIdx].buttonReleased) && (measIdx == 0) && (!armed))
+      {
+        row = ((tireIdx / 2) * 2) + 1;
+        col = measIdx + ((tireIdx % 2) * 3);
+        DrawCellText(row, 
+                     col, 
+                     "****", 
+                     TFT_BLACK, 
+                     TFT_BLACK);
+        buttons[btnIdx].buttonReleased = false;
+        if(btnIdx == 1)
+        {
+          return 1;
+        }
+        else
+        {
+          return -1;
+        }
+      }
     }
     // check for stable temp and armed
     if(tempStable)
@@ -792,8 +812,8 @@ void MeasureTireTemps(int tireIdx)
         {
           sprintf(outStr, "%3.1F", tireTemps[(cars[selectedCar].positionCount * tireIdx) + tirePosIdx]);
         }
-        int row = ((tireIdx / 2) * 2) + 1;
-        int col = tirePosIdx + ((tireIdx % 2) * 3);
+        row = ((tireIdx / 2) * 2) + 1;
+        col = tirePosIdx + ((tireIdx % 2) * 3);
         DrawCellText(row, 
                      col, 
                      outStr, 
@@ -812,6 +832,7 @@ void MeasureTireTemps(int tireIdx)
   }
   Serial.println("End tire measurement");
   #endif
+  return 1;
 }
 ///
 ///
@@ -1238,16 +1259,16 @@ void MeasureAllTireTemps()
           }
         }
       }
-    //}
-    //// do measurements for tire
-    //else
-    //{
+      // do measurements for tire
       if(selTire < cars[selectedCar].tireCount)
       {
-        MeasureTireTemps(selTire);
-        startMeasure = false;
-        selTire++;
-        selTire = selTire <= cars[selectedCar].tireCount ? selTire : 0;
+        int nextDirection = MeasureTireTemps(selTire);
+        Serial.print("Done measuring ");
+        Serial.print(selTire);
+        Serial.println(" find next tire to measure");
+        selTire = GetNextTire(selTire, nextDirection);
+        Serial.print("next tire is ");
+        Serial.println(selTire);
         continue;
       }
     }
@@ -1281,20 +1302,17 @@ void MeasureAllTireTemps()
         #ifdef DEBUG_VERBOSE
         Serial.println("Select NEXT tire");
         #endif
-        selTire++;
-        selTire = selTire <= cars[selectedCar].tireCount ? selTire : 0;
+        selTire = GetNextTire(selTire, 1);
         buttons[1].buttonReleased = false;
         break;
       }
-      else if ((buttons[2].buttonReleased) || (buttons[3].buttonReleased)) 
+      else if ((buttons[2].buttonReleased)) 
       {
         #ifdef DEBUG_VERBOSE
         Serial.println("Select PRIOR tire");
         #endif
-        selTire--;
-        selTire = selTire >= 0 ? selTire :  cars[selectedCar].tireCount;
+        selTire = GetNextTire(selTire, -1);
         buttons[2].buttonReleased = false;
-        buttons[3].buttonReleased = false;
         break;
       }
       delay(50);
@@ -1376,6 +1394,55 @@ void MeasureAllTireTemps()
   textPosition[1] += tftDisplay.fontHeight();
   tftDisplay.drawString("Updating HTML...", textPosition[0], textPosition[1], GFXFF);
   WriteResultsHTML();  
+}
+//
+//
+//
+int GetNextTire(int selTire, int nextDirection)        
+{
+  Serial.print("next tire direction ");
+  Serial.print(nextDirection);
+  Serial.print(" last tire  ");
+  Serial.print(selTire);
+  selTire += nextDirection;
+  while(true)
+  {
+    if(selTire < 0)
+    {
+Serial.println("backward past tire 0, select 'done'");
+      selTire = cars[selectedCar].tireCount;
+    }
+    if(selTire > cars[selectedCar].tireCount)
+    {
+Serial.println("forward past done, select tire 0");
+      selTire = 0;
+    }
+    Serial.print("next tire ");
+    Serial.println(selTire);
+    if(selTire == cars[selectedCar].tireCount)
+    {
+      Serial.println("go to DONE");
+      break;
+    }
+    Serial.println();
+    Serial.print("first temp for car ");
+    Serial.print(selectedCar);
+    Serial.print(" tire ");
+    Serial.print(selTire);
+    Serial.print(" ");
+    Serial.println(tireTemps[(selTire * cars[selectedCar].positionCount)]);
+    if (tireTemps[(selTire * cars[selectedCar].positionCount)] == 0.0)
+    {
+      Serial.print("go to tire ");
+      Serial.println(selTire);
+      break;
+    }
+    Serial.println("next tire already measured! skip!");
+    selTire += nextDirection;
+  }
+  Serial.print("start measuring tire ");
+  Serial.println(selTire);
+  return selTire;
 }
 //
 // grid lines enclose 2 rows of 3 cells each
