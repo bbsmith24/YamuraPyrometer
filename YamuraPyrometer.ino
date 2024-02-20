@@ -87,7 +87,7 @@
 #define SECOND  6
 #define HUNDSEC 7
 
-#define BUTTON_COUNT 4
+#define BUTTON_COUNT 3
 // user inputs
 #define BUTTON_1 0
 #define BUTTON_2 1
@@ -239,7 +239,7 @@ void setup()
   buttons[0].buttonPin = 12;
   buttons[1].buttonPin = 14;
   buttons[2].buttonPin = 26;
-  buttons[3].buttonPin = 27;
+  //buttons[3].buttonPin = 27;
   // set up tft display
   tftDisplay.init();
   int w = tftDisplay.width();
@@ -891,7 +891,6 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
     else if ((buttons[2].buttonReleased) || (buttons[3].buttonReleased)) 
     {
       buttons[2].buttonReleased = false;
-      buttons[3].buttonReleased = false;
     }
     delay(50);
   }
@@ -1075,7 +1074,7 @@ void MeasureAllTireTemps()
   }
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
-  tftDisplay.setFreeFont(FSS18);
+  tftDisplay.setFreeFont(FSS12);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
   textPosition[0] = 5;
   textPosition[1] = 5;
@@ -1314,9 +1313,9 @@ void SelectCar()
 //
 void ChangeSettings()
 {
-  int menuCount = 6;
+  int menuCount = 7;
   int result =  0;
-  while(result != 4)
+  while(result != 6)
   {
     choices[0].description = "Set Date/Time"; choices[0].result = 0;
     choices[1].description = "Set Units";     choices[1].result = 1;
@@ -1334,9 +1333,9 @@ void ChangeSettings()
     sprintf(buf, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
     choices[4].description = buf;             choices[4].result = 4;
     sprintf(buf, "Pass %s", pass);
-    choices[5].description = buf;             choices[5].result = 4;
+    choices[5].description = buf;             choices[5].result = 5;
 
-    choices[6].description = "Exit";          choices[6].result = 5;
+    choices[6].description = "Exit";          choices[6].result = 6;
     result =  MenuSelect(FSS12, choices, menuCount, 0); 
     switch(result)
     {
