@@ -71,6 +71,7 @@
 #define DISPLAY_SELECTED_RESULT 4
 #define CHANGE_SETTINGS         5
 #define INSTANT_TEMP            6
+#define TEST_MENU               7
 
 #define FONT_HEIGHT            25
 #define DISPLAY_WIDTH         480
@@ -160,11 +161,12 @@ bool pmFlag;
 String days[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri","Sat"};
 String ampmStr[3] = {"am", "pm", "\0"};
 
-#define MAX_DISPLAY_LINES 12
+#define MAX_DISPLAY_LINES 7
 // TFT display
 TFT_eSPI tftDisplay = TFT_eSPI();
 // location of text
 int textPosition[2] = {5, 0};
+int screenRotation = 1;
 
 int tempIdx = 0;
 float tempStableRecent[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
@@ -206,7 +208,7 @@ void SetDateTime();
 void SetUnits();
 void ChangeSettings();
 void SelectCar();
-int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect);
+int MenuSelect(const GFXfont* font, MenuChoice choices[], int menuCount, int initialSelect);
 int MeasureTireTemps(int tire);
 void DisplayAllTireTemps(CarSettings currentResultCar);
 void MeasureAllTireTemps();
@@ -218,6 +220,7 @@ void DrawGrid(int tireCount);
 void DrawCellText(int row, int col, char* text, uint16_t textColor, uint16_t backColor);
 void SetupGrid(const GFXfont* font);
 int GetNextTire(int selTire, int nextDirection);
+void TestMenu();
 //
 // 
 //
@@ -247,7 +250,7 @@ void setup()
   // 1 landscape pins right
   // 2 portrait pins up
   // 3 landscape pins left
-  tftDisplay.setRotation(1);
+  tftDisplay.setRotation(screenRotation);
   SetupGrid(FSS12);
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
@@ -362,7 +365,6 @@ void setup()
   tftDisplay.drawString("RTC OK", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
 
-  Serial.println("Button setup");
   for(int idx = 0; idx < BUTTON_COUNT; idx++)
   {
     pinMode(buttons[idx].buttonPin, INPUT_PULLUP);
@@ -460,9 +462,33 @@ void loop()
       InstantTemp();
       deviceState = DISPLAY_MENU;
       break;
+    case TEST_MENU:
+      TestMenu();
+      deviceState = DISPLAY_MENU;
+      break;
     default:
       break;
   }
+}
+//
+//
+//
+void TestMenu()
+{
+  int menuCount = 12;
+  choices[ 0].description = "Test  1";                   choices[0].result = MEASURE_TIRES;
+  choices[ 1].description = "Test  2";                   choices[0].result = MEASURE_TIRES;
+  choices[ 2].description = "Test  3";                   choices[0].result = MEASURE_TIRES;
+  choices[ 3].description = "Test  4";                   choices[0].result = MEASURE_TIRES;
+  choices[ 4].description = "Test  5";                   choices[0].result = MEASURE_TIRES;
+  choices[ 5].description = "Test  6";                   choices[0].result = MEASURE_TIRES;
+  choices[ 6].description = "Test  7";                   choices[0].result = MEASURE_TIRES;
+  choices[ 7].description = "Test  8";                   choices[0].result = MEASURE_TIRES;
+  choices[ 8].description = "Test  9";                   choices[0].result = MEASURE_TIRES;
+  choices[ 9].description = "Test 10";                   choices[0].result = MEASURE_TIRES;
+  choices[10].description = "Test 11";                   choices[0].result = MEASURE_TIRES;
+  choices[11].description = "Test 12";                   choices[0].result = MEASURE_TIRES;
+  deviceState =  MenuSelect(FSS12, choices, menuCount, MEASURE_TIRES); 
 }
 //
 //
@@ -474,10 +500,11 @@ void DisplayMenu()
   choices[1].description = cars[selectedCar].carName.c_str(); choices[1].result = SELECT_CAR;
   choices[2].description = "Display Temps";                   choices[2].result = DISPLAY_TIRES;
   choices[3].description = "Instant Temp";                    choices[3].result = INSTANT_TEMP;
-  choices[4].description = "Display Results";                 choices[4].result = DISPLAY_SELECTED_RESULT;
+  choices[4].description = "Display Selected Results";        choices[4].result = DISPLAY_SELECTED_RESULT;
   choices[5].description = "Settings";                        choices[5].result = CHANGE_SETTINGS;
+  //choices[6].description = "Test menu";                       choices[6].result = TEST_MENU;
   
-  deviceState =  MenuSelect(choices, menuCount, MAX_DISPLAY_LINES, MEASURE_TIRES); 
+  deviceState =  MenuSelect(FSS12, choices, menuCount, MEASURE_TIRES); 
 }
 //
 // measure temperatures on a single tire
@@ -1001,12 +1028,7 @@ void MeasureAllTireTemps()
       if(selTire < cars[selectedCar].tireCount)
       {
         int nextDirection = MeasureTireTemps(selTire);
-        Serial.print("Done measuring ");
-        Serial.print(selTire);
-        Serial.println(" find next tire to measure");
         selTire = GetNextTire(selTire, nextDirection);
-        Serial.print("next tire is ");
-        Serial.println(selTire);
         continue;
       }
     }
@@ -1083,7 +1105,7 @@ void MeasureAllTireTemps()
   {
     for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
     {
-      //tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition] = currentTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
+      //tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosinitialSelectition] = currentTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
       fileLine += ';';
       fileLine += tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
     }
@@ -1118,10 +1140,6 @@ void MeasureAllTireTemps()
 //
 int GetNextTire(int selTire, int nextDirection)        
 {
-  Serial.print("next tire direction ");
-  Serial.print(nextDirection);
-  Serial.print(" last tire  ");
-  Serial.print(selTire);
   selTire += nextDirection;
   while(true)
   {
@@ -1168,7 +1186,7 @@ void DrawCellText(int row, int col, char* outStr, uint16_t textColor, uint16_t b
 //
 //
 //
-int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int initialSelect)
+int MenuSelect(const GFXfont* font, MenuChoice choices[], int menuCount, int initialSelect)
 {
   char outStr[256];
   textPosition[0] = 5;
@@ -1183,9 +1201,6 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
       selection = selIdx;
     }
   }
-  // range of selections to display (allow scrolling)
-  int displayRange[2] = {0, linesToDisplay - 1 };
-  displayRange[1] = (menuCount < linesToDisplay ? menuCount : linesToDisplay) - 1;
   // reset buttons
   for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
   {
@@ -1195,9 +1210,14 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
   // loop until selection is made
-  tftDisplay.setFreeFont(FSS18);
+  tftDisplay.setFreeFont(font);
   tftDisplay.setTextDatum(TL_DATUM);
   int fontHeight = tftDisplay.fontHeight(GFXFF);
+  int linesToDisplay = (tftDisplay.height() - 10)/fontHeight;
+  // range of selections to display (allow scrolling)
+  int displayRange[2] = {0, linesToDisplay - 1 };
+  displayRange[1] = (menuCount < linesToDisplay ? menuCount : linesToDisplay) - 1;
+  // display menu
   while(true)
   {
     textPosition[0] = 5;
@@ -1205,6 +1225,7 @@ int MenuSelect(MenuChoice choices[], int menuCount, int linesToDisplay, int init
     for(int menuIdx = displayRange[0]; menuIdx <= displayRange[1]; menuIdx++)
     {
       sprintf(outStr, "%s", choices[menuIdx].description.c_str());
+      tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_BLACK);
       if(menuIdx == selection)
       {
         tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
@@ -1286,7 +1307,7 @@ void SelectCar()
     choices[idx].description = cars[idx].carName;
     choices[idx].result = idx; 
   }
-  selectedCar =  MenuSelect(choices, carCount, MAX_DISPLAY_LINES, 0); 
+  selectedCar =  MenuSelect(FSS12, choices, carCount, 0); 
 }
 //
 //
@@ -1295,17 +1316,28 @@ void ChangeSettings()
 {
   int menuCount = 6;
   int result =  0;
-  while(result != 3)
+  while(result != 4)
   {
     choices[0].description = "Set Date/Time"; choices[0].result = 0;
     choices[1].description = "Set Units";     choices[1].result = 1;
     choices[2].description = "Delete Data";   choices[2].result = 2;
+    if(screenRotation == 1)
+    {
+      choices[3].description = "Switch to Left Hand (invert screen)"; choices[3].result = 3;      
+    }
+    else
+    {
+      choices[3].description = "Switch to Right Hand (invert screen)"; choices[3].result = 3;      
+    }
+    
+    
     sprintf(buf, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
-    choices[3].description = buf;             choices[3].result = 4;
-    sprintf(buf, "Pass %s", pass);
     choices[4].description = buf;             choices[4].result = 4;
-    choices[5].description = "Exit";          choices[5].result = 3;
-    result =  MenuSelect(choices, menuCount, MAX_DISPLAY_LINES, 0); 
+    sprintf(buf, "Pass %s", pass);
+    choices[5].description = buf;             choices[5].result = 4;
+
+    choices[6].description = "Exit";          choices[6].result = 5;
+    result =  MenuSelect(FSS12, choices, menuCount, 0); 
     switch(result)
     {
       case 0:
@@ -1316,6 +1348,20 @@ void ChangeSettings()
         break;
       case 2:
         DeleteDataFile();
+        break;
+      case 3:
+        screenRotation = screenRotation == 1 ? 3 : 1;
+        tftDisplay.setRotation(screenRotation);
+        tftDisplay.fillScreen(TFT_BLACK);
+        int reverseButtons[BUTTON_COUNT];
+        for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+        {
+          reverseButtons[BUTTON_COUNT - (btnIdx + 1)] = buttons[btnIdx].buttonPin;
+        }
+        for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+        {
+          buttons[btnIdx].buttonPin = reverseButtons[btnIdx];
+        }
         break;
       default:
         break;
@@ -1330,7 +1376,7 @@ void SetUnits()
   int menuCount = 2;
   choices[0].description = "Temp in F";   choices[0].result = 0;
   choices[1].description = "Temp in C";   choices[1].result = 1;
-  int menuResult =  MenuSelect(choices, menuCount, MAX_DISPLAY_LINES, 0); 
+  int menuResult =  MenuSelect(FSS12, choices, menuCount, 0); 
   // true for C, false for F
   tempUnits = menuResult == 1;
 }
@@ -1547,7 +1593,7 @@ void DeleteDataFile(bool verify)
     int menuCount = 2;
     choices[0].description = "Yes";      choices[0].result = 1;
     choices[1].description = "No";   choices[1].result = 0;
-    menuResult = MenuSelect (choices, menuCount, MAX_DISPLAY_LINES, 1); 
+    menuResult = MenuSelect (FSS12, choices, menuCount, 1); 
   }
   if(menuResult == 1)
   {
@@ -1815,10 +1861,13 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
       break;
     }
     token = strtok(buf, ";");
-    choices[menuCnt].description = token;      choices[menuCnt].result = menuCnt;
+    char outStr[128];//String measureTime = token;
+    sprintf(outStr, "%s %s", cars[selectedCar].carName, token);      
+    choices[menuCnt].description = outStr;
+    choices[menuCnt].result = menuCnt;
     menuCnt++;
   }
-  int menuResult = MenuSelect(choices, menuCnt, MAX_DISPLAY_LINES, 0);
+  int menuResult = MenuSelect(FSS12, choices, menuCnt, 0);
   file.close();
   // at this point, we need to parse the selected line and add to a measurment structure for display
   // get to the correct line
