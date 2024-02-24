@@ -268,7 +268,7 @@ void setup()
   //buttons[3].buttonPin = 27;
   // set up tft display
   tftDisplay.init();
-  RotateDisplay(1);  
+  RotateDisplay(false);  
   int w = tftDisplay.width();
   int h = tftDisplay.height();
   textPosition[0] = 5;
