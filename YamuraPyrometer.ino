@@ -29,12 +29,12 @@
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <SparkFun_MCP9600.h>    // thermocouple amplifier
 #include <TFT_eSPI.h>            // https://github.com/Bodmer/TFT_eSPI Graphics and font library for ST7735 driver chip
 #include "Free_Fonts.h"          // Include the header file attached to this sketch
 #include "FS.h"
 #include "SD.h"
 #include "SPI.h"
+#include <SparkFun_MCP9600.h>    // thermocouple amplifier
 // various RTC module libraries
 //#define RTC_RV1805
 //#define RTC_RV8803
@@ -48,6 +48,75 @@
 #ifdef HILETGO_DS3231
 #include <DS3231-RTC.h> // https://github.com/hasenradball/DS3231-RTC
 #endif
+// car info structure
+struct CarSettings
+{
+    String carName;
+    String dateTime;
+    int tireCount;
+    String* tireShortName;
+    String* tireLongName;
+    int positionCount;
+    String* positionShortName;
+    String* positionLongName;
+    float* maxTemp;
+};
+struct MenuChoice
+{
+  String description;
+  int result;
+};
+// device settings structure
+struct DeviceSettings
+{
+  char ssid[32] = "Yamura-Pyrometer";
+  char pass[32] = "ZoeyDora48375";
+  int screenRotation = 1;
+  bool tempUnits = false; // true for C, false for F
+  bool is12Hour = true;   // true for 12 hour clock, false for 24 hour clock
+  int fontPoints = 12;    // size of font to use for display
+};
+// function prototypes
+void TestMenu();
+void DisplayMenu();
+int MeasureTireTemps(int tire);
+void InstantTemp();
+void DrawGrid(int tireCount);
+void SetupGrid(int fontHeight);
+void DisplayAllTireTemps(CarSettings currentResultCar);
+void MeasureAllTireTemps();
+int GetNextTire(int selTire, int nextDirection);
+void DrawCellText(int row, int col, char* text, uint16_t textColor, uint16_t backColor);
+int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSelect);
+void SelectCar();
+void ChangeSettings();
+void Select12or24();
+void SelectFontSize();
+void RotateDisplay(bool rotateButtons);
+void SetUnits();
+void SetDateTime();
+void DeleteDataFile(bool verify = true);
+bool CheckTempStable(float curTemp);
+void ResetTempStable();
+void ReadCarSetupFile(fs::FS &fs, const char * path);
+void WriteCarSetupFile(fs::FS &fs, const char * path);
+void ReadDeviceSetupFile(fs::FS &fs, const char * path);
+void WriteDeviceSetupFile(fs::FS &fs, const char * path);
+void DisplaySelectedResults(fs::FS &fs, const char * path);
+void WriteResultsHTML();
+void ParseResult(char buf[], CarSettings &currentResultCar);
+void ReadLine(File file, char* buf);
+void AppendFile(fs::FS &fs, const char * path, const char * message);
+void DeleteFile(fs::FS &fs, const char * path);
+void handleRoot(AsyncWebServerRequest *request);
+void handleNotFound(AsyncWebServerRequest *request);
+void onServoInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
+String GetStringTime();
+String GetStringDate();
+bool UpdateTime();
+void CheckButtons(unsigned long curTime);
+void YamuraBanner();
+void SetFont(int fontSize);
 
 // uncomment for debug to serial monitor (use #ifdef...#endif around debug output prints)
 //#define DEBUG_VERBOSE
@@ -59,10 +128,12 @@
 #define I2C_SCL 22
 // uncomment for RTC module attached
 #define HAS_RTC
-// uncomment for thermocouple module attached
+// uncomment for thermocouple module attached (use random values for test if not attached)
 #define HAS_THERMO
-// uncomment to write INI file
+// uncomment to write setup files
 //#define WRITE_INI
+// max menu item count
+#define MAX_MENU_ITEMS 100
 // main menu
 #define DISPLAY_MENU            0
 #define SELECT_CAR              1
@@ -83,14 +154,14 @@
 #define SET_PASS 7
 #define SET_SAVESETTINGS 8
 #define SET_EXIT 9
-
+// font size menu
 #define FONTSIZE_9 0
 #define FONTSIZE_12 1
 #define FONTSIZE_18 2
 #define FONTSIZE_24 3
+// 12/24 hour menu
 #define HOURS_12 0
 #define HOURS_24 1
-
 // index to date/time value array
 #define DATE    0
 #define MONTH   1
@@ -100,15 +171,15 @@
 #define MINUTE  5
 #define SECOND  6
 #define HUNDSEC 7
-
-#define BUTTON_COUNT 3
 // user inputs
+#define BUTTON_COUNT 3
 #define BUTTON_1 0
 #define BUTTON_2 1
 #define BUTTON_3 2
 #define BUTTON_RELEASED 0
 #define BUTTON_PRESSED  1
 #define BUTTON_DEBOUNCE_DELAY   20   // ms
+// button debounce structure
 struct UserButton
 {
   int buttonPin = 0;
@@ -121,46 +192,14 @@ struct UserButton
 };
 UserButton buttons[BUTTON_COUNT];
 
-char buf[512];
-
-// car info structure
-struct CarSettings
-{
-    String carName;
-    String dateTime;
-    int tireCount;
-    String* tireShortName;
-    String* tireLongName;
-    int positionCount;
-    String* positionShortName;
-    String* positionLongName;
-    float* maxTemp;
-};
+// car list from setup file
 CarSettings* cars;
-struct DeviceSettings
-{
-  char ssid[32] = "Yamura-Pyrometer";
-  char pass[32] = "ZoeyDora48375";
-  int screenRotation = 1;
-  bool tempUnits = false; // true for C, false for F
-  bool is12Hour = true;   // true for 12 hour clock, false for 24 hour clock
-  int fontPoints = 12;    // size of font to use for display
-};
+// device settings from file
 DeviceSettings deviceSettings;
 
 // tire temp array
-float tireTemps[60];
-float currentTemps[60];
-
-#define MAX_MENU_ITEMS 100
-String curMenu[MAX_MENU_ITEMS];
-int menuResult[MAX_MENU_ITEMS];
-struct MenuChoice
-{
-  String description;
-  int result;
-};
-MenuChoice choices[MAX_MENU_ITEMS];
+float tireTemps[18];
+float currentTemps[18];
 
 // devices
 // thermocouple amplifier
@@ -182,11 +221,8 @@ bool pmFlag;
 String days[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri","Sat"};
 String ampmStr[3] = {"am", "pm", "\0"};
 
-#define MAX_DISPLAY_LINES 7
 // TFT display
 TFT_eSPI tftDisplay = TFT_eSPI();
-// location of text
-int textPosition[2] = {5, 0};
 int fontHeight;
 
 int tempIdx = 0;
@@ -201,54 +237,13 @@ int measIdx = 0;
 float tempRes = 1.0;
 int deviceState = 0;
 
-String curTimeStr;
-unsigned long prior = 0;
-unsigned long previousMillis = 0;
-unsigned long currentMillis = 0;
 IPAddress IP;
 AsyncWebServer server(80);
 AsyncWebSocket wsServoInput("/ServoInput");
 String htmlStr;
 
-// function prototypes
-void WriteResultsHTML();
-void ParseResult(char buf[], CarSettings &currentResultCar);
-void DeleteFile(fs::FS &fs, const char * path);
-void AppendFile(fs::FS &fs, const char * path, const char * message);
-void ReadLine(File file, char* buf);
-void DisplaySelectedResults(fs::FS &fs, const char * path);
-void WriteCarSetupFile(fs::FS &fs, const char * path);
-void ReadCarSetupFile(fs::FS &fs, const char * path);
-void ResetTempStable();
-bool CheckTempStable(float curTemp);
-void DeleteDataFile(bool verify = true);
-void SetDateTime();
-void SetUnits();
-void ChangeSettings();
-void SelectCar();
-int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSelect);
-int MeasureTireTemps(int tire);
-void DisplayAllTireTemps(CarSettings currentResultCar);
-void MeasureAllTireTemps();
-void DisplayMenu();
-void InstantTemp();
-void CheckButtons(unsigned long curTime);
-void YamuraBanner();
-void DrawGrid(int tireCount);
-void DrawCellText(int row, int col, char* text, uint16_t textColor, uint16_t backColor);
-void SetupGrid(int fontHeight);
-int GetNextTire(int selTire, int nextDirection);
-void TestMenu();
-String GetStringTime();
-String GetStringDate();
-bool UpdateTime();
-void RotateDisplay(bool rotateButtons);
-void SelectFontSize();
-void Select12or24();
-void ReadDeviceSetupFile(fs::FS &fs, const char * path);
-void WriteDeviceSetupFile(fs::FS &fs, const char * path);
 //
-// 
+// grid lines for temp measure/display
 //
 int gridLineH[4][2][2];   //  4 vertical lines, 2 points per line, 2 values per point (X and Y)
 int gridLineV[3][2][2];   //  3 vertical lines, 2 points per line, 2 values per point (X and Y)
@@ -260,7 +255,9 @@ void setup()
 {
   char outStr[128];
   Serial.begin(115200);
-  
+  // location of text
+  int textPosition[2] = {5, 0};
+
   // setup buttons on SX1509
   buttons[0].buttonPin = 12;
   buttons[1].buttonPin = 14;
@@ -426,7 +423,6 @@ void setup()
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   #endif
-  prior = millis();
   deviceState = DISPLAY_MENU;
 
   WriteResultsHTML();
@@ -517,7 +513,7 @@ void TestMenu()
   testChoices[ 9].description = "Test 10";                   testChoices[0].result = MEASURE_TIRES;
   testChoices[10].description = "Test 11";                   testChoices[0].result = MEASURE_TIRES;
   testChoices[11].description = "Test 12";                   testChoices[0].result = MEASURE_TIRES;
-  deviceState =  MenuSelect(deviceSettings.fontPoints, choices, menuCount, MEASURE_TIRES); 
+  deviceState =  MenuSelect(deviceSettings.fontPoints, testChoices, menuCount, MEASURE_TIRES); 
 }
 //
 //
@@ -543,8 +539,8 @@ void DisplayMenu()
 int MeasureTireTemps(int tireIdx)
 {
   char outStr[512];
-  textPosition[0] = 5;
-  textPosition[1] = 0;
+  // location of text
+  int textPosition[2] = {5, 0};
   int row = 0;
   int col = 0;
   bool armed = false;
@@ -661,8 +657,8 @@ void InstantTemp()
   unsigned long curTime = millis();
   char outStr[128];
   float instant_temp = 0.0;
-  textPosition[0] = 5;
-  textPosition[1] = 0;
+  // location of text
+  int textPosition[2] = {5, 0};
   randomSeed(100);
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
@@ -830,8 +826,8 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
 {
   unsigned long curTime = millis();
   unsigned long priorTime = millis();
-  textPosition[0] = 5;
-  textPosition[1] = 0;
+  // location of text
+  int textPosition[2] = {5, 0};
   int row = 0;
   int col = 0;
   char outStr[255];
@@ -1103,8 +1099,8 @@ void MeasureAllTireTemps()
   YamuraBanner();
   SetFont(deviceSettings.fontPoints);// <= 12 ? deviceSettings.fontPoints : 12);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
-  textPosition[0] = 5;
-  textPosition[1] = 5;
+  // location of text
+  int textPosition[2] = {5, 0};
 
   tftDisplay.drawString("Done", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
@@ -1113,6 +1109,7 @@ void MeasureAllTireTemps()
   #ifdef HAS_RTC
   UpdateTime();
   cars[selectedCar].dateTime = GetStringTime();
+  String curTimeStr;
   curTimeStr = GetStringTime();
   curTimeStr += " ";
   curTimeStr += GetStringDate();
@@ -1222,9 +1219,9 @@ void DrawCellText(int row, int col, char* outStr, uint16_t textColor, uint16_t b
 int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSelect)
 {
   char outStr[256];
-  textPosition[0] = 5;
-  textPosition[1] = 0;
-  currentMillis = millis();
+  // location of text
+  int textPosition[2] = {5, 0};
+  unsigned long currentMillis = millis();
   // find initial selection
   int selection = initialSelect;
   for(int selIdx = 0; selIdx < menuCount; selIdx++)
@@ -1332,12 +1329,14 @@ int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSel
 //
 void SelectCar()
 {
+  MenuChoice* carsMenu = (MenuChoice*)calloc(carCount, sizeof(MenuChoice));
   for(int idx = 0; idx < carCount; idx++)
   {
-    choices[idx].description = cars[idx].carName;
-    choices[idx].result = idx; 
+    carsMenu[idx].description = cars[idx].carName;
+    carsMenu[idx].result = idx; 
   }
-  selectedCar =  MenuSelect(deviceSettings.fontPoints, choices, carCount, 0); 
+  selectedCar =  MenuSelect(deviceSettings.fontPoints, carsMenu, carCount, 0); 
+  free(carsMenu);
 }
 //
 //
@@ -1347,7 +1346,8 @@ void ChangeSettings()
   int menuCount = 10;
   int result =  0;
   MenuChoice settingsChoices[10];
- 
+  char buf[512];
+
   while(true)
   {
     settingsChoices[SET_DATETIME].description = "Set Date/Time"; settingsChoices[SET_DATETIME].result = SET_DATETIME;
@@ -1506,8 +1506,8 @@ void SetDateTime()
   char outStr[256];
   int timeVals[8] = {0, 0, 0, 0, 0, 0, 0, 0};  // date, month, year, day, hour, min, sec, 100ths
   bool isPM = false;
-  textPosition[0] = 5;
-  textPosition[1] = 0;
+  // location of text
+  int textPosition[2] = {5, 0};
   int setIdx = 0;
   unsigned long curTime = millis();
   int delta = 0;
@@ -1706,12 +1706,13 @@ void SetDateTime()
 void DeleteDataFile(bool verify)
 {
   int menuResult = 1;
+  MenuChoice deleteFileYN[2];
   if(verify)
   {
     int menuCount = 2;
-    choices[0].description = "Yes";      choices[0].result = 1;
-    choices[1].description = "No";   choices[1].result = 0;
-    menuResult = MenuSelect(deviceSettings.fontPoints, choices, menuCount, 1); 
+    deleteFileYN[0].description = "Yes";      deleteFileYN[0].result = 1;
+    deleteFileYN[1].description = "No";   deleteFileYN[1].result = 0;
+    menuResult = MenuSelect(deviceSettings.fontPoints, deleteFileYN, menuCount, 1); 
   }
   if(menuResult == 1)
   {
@@ -1771,6 +1772,7 @@ void ResetTempStable()
 //
 void ReadCarSetupFile(fs::FS &fs, const char * path)
 {
+  char buf[512];
   File file = fs.open(path, FILE_READ);
   if(!file)
   {
@@ -1833,20 +1835,6 @@ void WriteCarSetupFile(fs::FS &fs, const char * path)
   {
     return;
   }
-  Serial.println("Write device settings:");
-  Serial.print("SSID\t\t");
-  Serial.println(deviceSettings.ssid);
-  Serial.print("Password\t");
-  Serial.println(deviceSettings.pass);
-  Serial.print("Orientation\t");
-  Serial.println(deviceSettings.screenRotation);
-  Serial.print("Units flag\t");
-  Serial.println(deviceSettings.tempUnits ? 1 : 0);
-  Serial.print("12Hr flag\t");
-  Serial.println(deviceSettings.is12Hour ? 1 : 0);
-  Serial.print("Font size\t");
-  Serial.println(deviceSettings.fontPoints);
-
   file.println("5");            // number of cars
   file.println("Brian Z4");    // car
   file.println("4");           // wheels
@@ -1963,6 +1951,7 @@ void WriteCarSetupFile(fs::FS &fs, const char * path)
 //
 void ReadDeviceSetupFile(fs::FS &fs, const char * path)
 {
+  char buf[512];
   File file = fs.open(path, FILE_READ);
   if(!file)
   {
@@ -1983,21 +1972,6 @@ void ReadDeviceSetupFile(fs::FS &fs, const char * path)
   deviceSettings.is12Hour = temp == 0 ? false : true;
   ReadLine(file, buf);
   deviceSettings.fontPoints = atoi(buf);
-  
-  Serial.print("Read from device setup file ");
-  Serial.println(path);
-  Serial.print("SSID\t\t");
-  Serial.println(deviceSettings.ssid);
-  Serial.print("Password\t");
-  Serial.println(deviceSettings.pass);
-  Serial.print("Orientation\t");
-  Serial.println(deviceSettings.screenRotation);
-  Serial.print("Units flag\t");
-  Serial.println(deviceSettings.tempUnits ? 1 : 0);
-  Serial.print("12Hr flag\t");
-  Serial.println(deviceSettings.is12Hour ? 1 : 0);
-  Serial.print("Font size\t");
-  Serial.println(deviceSettings.fontPoints);
 }
 //
 //
@@ -2010,21 +1984,6 @@ void WriteDeviceSetupFile(fs::FS &fs, const char * path)
   {
     return;
   }
-  Serial.print("Write to device setup file ");
-  Serial.println(path);
-  Serial.print("SSID\t\t");
-  Serial.println(deviceSettings.ssid);
-  Serial.print("Password\t");
-  Serial.println(deviceSettings.pass);
-  Serial.print("Orientation\t");
-  Serial.println(deviceSettings.screenRotation);
-  Serial.print("Units flag\t");
-  Serial.println(deviceSettings.tempUnits ? 1 : 0);
-  Serial.print("12Hr flag\t");
-  Serial.println(deviceSettings.is12Hour ? 1 : 0);
-  Serial.print("Font size\t");
-  Serial.println(deviceSettings.fontPoints);  
-
   file.println(deviceSettings.ssid);
   file.println(deviceSettings.pass);
   file.println(deviceSettings.screenRotation);
@@ -2037,6 +1996,7 @@ void WriteDeviceSetupFile(fs::FS &fs, const char * path)
 //
 void DisplaySelectedResults(fs::FS &fs, const char * path)
 {
+  char buf[512];
   CarSettings currentResultCar;
   int tokenIdx = 0;
   int measureIdx = 0;
@@ -2058,8 +2018,22 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     delay(5000);
     return;
   }
+  // get count of results
   int menuCnt = 0;
   while(menuCnt < MAX_MENU_ITEMS)
+  {
+    ReadLine(file, buf);
+    if(strlen(buf) == 0)
+    {
+      break;
+    }
+	menuCnt++;
+  }
+  file.close();
+  MenuChoice* carsMenu = (MenuChoice*)calloc(menuCnt, sizeof(MenuChoice));
+  file = SD.open(path, FILE_READ);
+  menuCnt = 0;
+  while(true)
   {
     ReadLine(file, buf);
     if(strlen(buf) == 0)
@@ -2069,12 +2043,14 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     token = strtok(buf, ";");
     char outStr[128];
     sprintf(outStr, "%s %s", cars[selectedCar].carName, token);
-    choices[menuCnt].description = outStr;
-    choices[menuCnt].result = menuCnt;
+    carsMenu[menuCnt].description = outStr;
+    carsMenu[menuCnt].result = menuCnt;
     menuCnt++;
   }
-  int menuResult = MenuSelect(deviceSettings.fontPoints, choices, menuCnt, 0);
   file.close();
+  
+  int menuResult = MenuSelect(deviceSettings.fontPoints, carsMenu, menuCnt, 0);
+  free(carsMenu);
   // at this point, we need to parse the selected line and add to a measurment structure for display
   // get to the correct line
   file = SD.open(path, FILE_READ);
@@ -2095,6 +2071,7 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
   file.close();
   ParseResult(buf, currentResultCar);
   DisplayAllTireTemps(currentResultCar);
+  free(currentResultCar.maxTemp);
 }
 //
 // write HTML display file
@@ -2126,6 +2103,7 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
 //
 void WriteResultsHTML()
 {
+  char buf[512];
   char nameBuf[128];
   htmlStr = "";
   CarSettings currentResultCar;
@@ -2221,6 +2199,7 @@ void WriteResultsHTML()
         }
       }
       AppendFile(SD, "/py_res.html", "		    </tr>");
+	  free(currentResultCar.maxTemp);
     }
   }
   if(rowCount == 0)
