@@ -30,7 +30,7 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <SparkFun_MCP9600.h>    // thermocouple amplifier
-#include <TFT_eSPI.h>            // Graphics and font library for ST7735 driver chip
+#include <TFT_eSPI.h>            // https://github.com/Bodmer/TFT_eSPI Graphics and font library for ST7735 driver chip
 #include "Free_Fonts.h"          // Include the header file attached to this sketch
 #include "FS.h"
 #include "SD.h"
@@ -62,8 +62,8 @@
 // uncomment for thermocouple module attached
 #define HAS_THERMO
 // uncomment to write INI file
-#define WRITE_INI
-
+//#define WRITE_INI
+// main menu
 #define DISPLAY_MENU            0
 #define SELECT_CAR              1
 #define MEASURE_TIRES           2
@@ -72,10 +72,24 @@
 #define CHANGE_SETTINGS         5
 #define INSTANT_TEMP            6
 #define TEST_MENU               7
+// settings menu
+#define SET_DATETIME 0
+#define SET_TEMPUNITS 1
+#define SET_FLIPDISPLAY 2
+#define SET_FONTSIZE 3
+#define SET_12H24H 4
+#define SET_DELETEDATA 5
+#define SET_IPADDRESS 6
+#define SET_PASS 7
+#define SET_SAVESETTINGS 8
+#define SET_EXIT 9
 
-#define FONT_HEIGHT            25
-#define DISPLAY_WIDTH         480
-#define DISPLAY_HEIGHT        320
+#define FONTSIZE_9 0
+#define FONTSIZE_12 1
+#define FONTSIZE_18 2
+#define FONTSIZE_24 3
+#define HOURS_12 0
+#define HOURS_24 1
 
 // index to date/time value array
 #define DATE    0
@@ -92,7 +106,6 @@
 #define BUTTON_1 0
 #define BUTTON_2 1
 #define BUTTON_3 2
-#define BUTTON_4 3
 #define BUTTON_RELEASED 0
 #define BUTTON_PRESSED  1
 #define BUTTON_DEBOUNCE_DELAY   20   // ms
@@ -107,10 +120,6 @@ struct UserButton
   unsigned long lastChange = 0;
 };
 UserButton buttons[BUTTON_COUNT];
-
-String GetStringTime();
-String GetStringDate();
-bool UpdateTime();
 
 char buf[512];
 
@@ -128,18 +137,30 @@ struct CarSettings
     float* maxTemp;
 };
 CarSettings* cars;
+struct DeviceSettings
+{
+  char ssid[32] = "Yamura-Pyrometer";
+  char pass[32] = "ZoeyDora48375";
+  int screenRotation = 1;
+  bool tempUnits = false; // true for C, false for F
+  bool is12Hour = true;   // true for 12 hour clock, false for 24 hour clock
+  int fontPoints = 12;    // size of font to use for display
+};
+DeviceSettings deviceSettings;
+
 // tire temp array
 float tireTemps[60];
 float currentTemps[60];
 
-String curMenu[50];
-int menuResult[50];
+#define MAX_MENU_ITEMS 100
+String curMenu[MAX_MENU_ITEMS];
+int menuResult[MAX_MENU_ITEMS];
 struct MenuChoice
 {
   String description;
   int result;
 };
-MenuChoice choices[50];
+MenuChoice choices[MAX_MENU_ITEMS];
 
 // devices
 // thermocouple amplifier
@@ -166,13 +187,12 @@ String ampmStr[3] = {"am", "pm", "\0"};
 TFT_eSPI tftDisplay = TFT_eSPI();
 // location of text
 int textPosition[2] = {5, 0};
-int screenRotation = 1;
+int fontHeight;
 
 int tempIdx = 0;
 float tempStableRecent[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 float tempStableMinMax[2] = {150.0, -150.0};
 bool tempStable = false;
-bool tempUnits = false; // true for C, false for F
 
 int carCount = 0;
 int selectedCar = 0;
@@ -185,8 +205,6 @@ String curTimeStr;
 unsigned long prior = 0;
 unsigned long previousMillis = 0;
 unsigned long currentMillis = 0;
-const char* ssid     = "Yamura-Pyrometer";
-const char* pass = "ZoeyDora48375";
 IPAddress IP;
 AsyncWebServer server(80);
 AsyncWebSocket wsServoInput("/ServoInput");
@@ -199,8 +217,8 @@ void DeleteFile(fs::FS &fs, const char * path);
 void AppendFile(fs::FS &fs, const char * path, const char * message);
 void ReadLine(File file, char* buf);
 void DisplaySelectedResults(fs::FS &fs, const char * path);
-void WriteSetupFile(fs::FS &fs, const char * path);
-void ReadSetupFile(fs::FS &fs, const char * path);
+void WriteCarSetupFile(fs::FS &fs, const char * path);
+void ReadCarSetupFile(fs::FS &fs, const char * path);
 void ResetTempStable();
 bool CheckTempStable(float curTemp);
 void DeleteDataFile(bool verify = true);
@@ -208,7 +226,7 @@ void SetDateTime();
 void SetUnits();
 void ChangeSettings();
 void SelectCar();
-int MenuSelect(const GFXfont* font, MenuChoice choices[], int menuCount, int initialSelect);
+int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSelect);
 int MeasureTireTemps(int tire);
 void DisplayAllTireTemps(CarSettings currentResultCar);
 void MeasureAllTireTemps();
@@ -218,9 +236,17 @@ void CheckButtons(unsigned long curTime);
 void YamuraBanner();
 void DrawGrid(int tireCount);
 void DrawCellText(int row, int col, char* text, uint16_t textColor, uint16_t backColor);
-void SetupGrid(const GFXfont* font);
+void SetupGrid(int fontHeight);
 int GetNextTire(int selTire, int nextDirection);
 void TestMenu();
+String GetStringTime();
+String GetStringDate();
+bool UpdateTime();
+void RotateDisplay(bool rotateButtons);
+void SelectFontSize();
+void Select12or24();
+void ReadDeviceSetupFile(fs::FS &fs, const char * path);
+void WriteDeviceSetupFile(fs::FS &fs, const char * path);
 //
 // 
 //
@@ -242,6 +268,7 @@ void setup()
   //buttons[3].buttonPin = 27;
   // set up tft display
   tftDisplay.init();
+  RotateDisplay(1);  
   int w = tftDisplay.width();
   int h = tftDisplay.height();
   textPosition[0] = 5;
@@ -250,14 +277,9 @@ void setup()
   // 1 landscape pins right
   // 2 portrait pins up
   // 3 landscape pins left
-  tftDisplay.setRotation(screenRotation);
-  SetupGrid(FSS12);
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
-
-  tftDisplay.setFreeFont(FSS12);
-  tftDisplay.setTextDatum(TL_DATUM);
-  int fontHeight = tftDisplay.fontHeight(GFXFF);
+  SetFont(deviceSettings.fontPoints);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
   tftDisplay.drawString("Yamura Electronics Recording Pyrometer", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
@@ -386,10 +408,12 @@ void setup()
   // uncomment to write a default setup file
   // maybe check for setup and write one if needed?
   #ifdef WRITE_INI
-  DeleteFile(SD, "/py_setup.txt");
-  WriteSetupFile(SD, "/py_setup.txt");
+  DeleteFile(SD, "/py_cars.txt");
+  WriteCarSetupFile(SD, "/py_cars.txt");
+  WriteDeviceSetupFile(SD, "/py_setup.txt");
   #endif
-  ReadSetupFile(SD,  "/py_setup.txt");
+  ReadCarSetupFile(SD,  "/py_cars.txt");
+  ReadDeviceSetupFile(SD,  "/py_setup.txt");
 
   ResetTempStable();
 
@@ -406,7 +430,7 @@ void setup()
   deviceState = DISPLAY_MENU;
 
   WriteResultsHTML();
-  WiFi.softAP(ssid, pass);
+  WiFi.softAP(deviceSettings.ssid, deviceSettings.pass);
   IP = WiFi.softAPIP();
   server.on("/", HTTP_GET, handleRoot);
   server.onNotFound(handleNotFound);
@@ -421,9 +445,13 @@ void setup()
   sprintf(outStr, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
-  sprintf(outStr, "Password %s", pass);
+  sprintf(outStr, "Password %s", deviceSettings.pass);
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
+
+  RotateDisplay(deviceSettings.screenRotation != 1);
+  SetupGrid(deviceSettings.fontPoints);
+
   delay(5000);
 }
 //
@@ -476,19 +504,20 @@ void loop()
 void TestMenu()
 {
   int menuCount = 12;
-  choices[ 0].description = "Test  1";                   choices[0].result = MEASURE_TIRES;
-  choices[ 1].description = "Test  2";                   choices[0].result = MEASURE_TIRES;
-  choices[ 2].description = "Test  3";                   choices[0].result = MEASURE_TIRES;
-  choices[ 3].description = "Test  4";                   choices[0].result = MEASURE_TIRES;
-  choices[ 4].description = "Test  5";                   choices[0].result = MEASURE_TIRES;
-  choices[ 5].description = "Test  6";                   choices[0].result = MEASURE_TIRES;
-  choices[ 6].description = "Test  7";                   choices[0].result = MEASURE_TIRES;
-  choices[ 7].description = "Test  8";                   choices[0].result = MEASURE_TIRES;
-  choices[ 8].description = "Test  9";                   choices[0].result = MEASURE_TIRES;
-  choices[ 9].description = "Test 10";                   choices[0].result = MEASURE_TIRES;
-  choices[10].description = "Test 11";                   choices[0].result = MEASURE_TIRES;
-  choices[11].description = "Test 12";                   choices[0].result = MEASURE_TIRES;
-  deviceState =  MenuSelect(FSS12, choices, menuCount, MEASURE_TIRES); 
+  MenuChoice testChoices[12];
+  testChoices[ 0].description = "Test  1";                   testChoices[0].result = MEASURE_TIRES;
+  testChoices[ 1].description = "Test  2";                   testChoices[0].result = MEASURE_TIRES;
+  testChoices[ 2].description = "Test  3";                   testChoices[0].result = MEASURE_TIRES;
+  testChoices[ 3].description = "Test  4";                   testChoices[0].result = MEASURE_TIRES;
+  testChoices[ 4].description = "Test  5";                   testChoices[0].result = MEASURE_TIRES;
+  testChoices[ 5].description = "Test  6";                   testChoices[0].result = MEASURE_TIRES;
+  testChoices[ 6].description = "Test  7";                   testChoices[0].result = MEASURE_TIRES;
+  testChoices[ 7].description = "Test  8";                   testChoices[0].result = MEASURE_TIRES;
+  testChoices[ 8].description = "Test  9";                   testChoices[0].result = MEASURE_TIRES;
+  testChoices[ 9].description = "Test 10";                   testChoices[0].result = MEASURE_TIRES;
+  testChoices[10].description = "Test 11";                   testChoices[0].result = MEASURE_TIRES;
+  testChoices[11].description = "Test 12";                   testChoices[0].result = MEASURE_TIRES;
+  deviceState =  MenuSelect(deviceSettings.fontPoints, choices, menuCount, MEASURE_TIRES); 
 }
 //
 //
@@ -496,15 +525,16 @@ void TestMenu()
 void DisplayMenu()
 {
   int menuCount = 6;
-  choices[0].description = "Measure Temps";                   choices[0].result = MEASURE_TIRES;
-  choices[1].description = cars[selectedCar].carName.c_str(); choices[1].result = SELECT_CAR;
-  choices[2].description = "Display Temps";                   choices[2].result = DISPLAY_TIRES;
-  choices[3].description = "Instant Temp";                    choices[3].result = INSTANT_TEMP;
-  choices[4].description = "Display Selected Results";        choices[4].result = DISPLAY_SELECTED_RESULT;
-  choices[5].description = "Settings";                        choices[5].result = CHANGE_SETTINGS;
-  //choices[6].description = "Test menu";                       choices[6].result = TEST_MENU;
+  MenuChoice mainMenuChoices[6];  
+  mainMenuChoices[0].description = "Measure Temps";                   mainMenuChoices[0].result = MEASURE_TIRES;
+  mainMenuChoices[1].description = cars[selectedCar].carName.c_str(); mainMenuChoices[1].result = SELECT_CAR;
+  mainMenuChoices[2].description = "Display Temps";                   mainMenuChoices[2].result = DISPLAY_TIRES;
+  mainMenuChoices[3].description = "Instant Temp";                    mainMenuChoices[3].result = INSTANT_TEMP;
+  mainMenuChoices[4].description = "Display Selected Results";        mainMenuChoices[4].result = DISPLAY_SELECTED_RESULT;
+  mainMenuChoices[5].description = "Settings";                        mainMenuChoices[5].result = CHANGE_SETTINGS;
+  //mainMenuChoices[6].description = "Test menu";                       mainMenuChoices[6].result = TEST_MENU;
   
-  deviceState =  MenuSelect(FSS12, choices, menuCount, MEASURE_TIRES); 
+  deviceState =  MenuSelect(deviceSettings.fontPoints, mainMenuChoices, menuCount, MEASURE_TIRES); 
 }
 //
 // measure temperatures on a single tire
@@ -593,7 +623,7 @@ int MeasureTireTemps(int tireIdx)
       if(armed)
       {
         #ifdef HAS_THERMO
-        tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
+        tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = tempSensor.getThermocoupleTemp(deviceSettings.tempUnits); // false for F, true or empty for C
         #else
         tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 100;
         #endif
@@ -636,10 +666,11 @@ void InstantTemp()
   randomSeed(100);
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
-  tftDisplay.setFreeFont(FSS18);
+  SetFont(deviceSettings.fontPoints);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
   tftDisplay.drawString("Temperature", textPosition[0], textPosition[1], GFXFF);
-  textPosition[1] +=  tftDisplay.fontHeight();
+  textPosition[1] +=  fontHeight;
+  sprintf(outStr, " ");
   while(true)
   {
     curTime = millis();
@@ -648,10 +679,11 @@ void InstantTemp()
       priorTime = curTime;
       // read temp
       #ifdef HAS_THERMO
-      instant_temp = tempSensor.getThermocoupleTemp(tempUnits); // false for F, true or empty for C
+      instant_temp = tempSensor.getThermocoupleTemp(deviceSettings.tempUnits); // false for F, true or empty for C
       #else
       instant_temp = 100.0F;
       #endif
+      tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.textWidth(outStr), fontHeight, TFT_BLACK);
       sprintf(outStr, "%0.2f", instant_temp);
       tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
     }
@@ -688,40 +720,36 @@ void DrawGrid(int tireCount)
 //
 //
 //
-void SetupGrid(const GFXfont* font)
+void SetupGrid(int fontHeight)
 {
-    tftDisplay.setFreeFont(font);
-	int fontHeight = tftDisplay.fontHeight(GFXFF);
+  SetFont(fontHeight <= 12 ? fontHeight : 12);
+	int gridHeight = tftDisplay.fontHeight(GFXFF);
   // 4 horizontal grid lines
   // x = 1 (start) 475 (end)
   // at y = 
-  // FONT_HEIGHT +  10;
-  // FONT_HEIGHT +  80;
-  // FONT_HEIGHT + 150;
-  // FONT_HEIGHT + 220;
-  gridLineH[0][0][0] = 1;      gridLineH[0][0][1] = fontHeight +   10;
-  gridLineH[0][1][0] = 475;    gridLineH[0][1][1] = fontHeight +   10;
+  gridLineH[0][0][0] = 1;      gridLineH[0][0][1] = gridHeight +   10;
+  gridLineH[0][1][0] = 475;    gridLineH[0][1][1] = gridHeight +   10;
   
-  gridLineH[1][0][0] = 1;      gridLineH[1][0][1] = fontHeight +   80;
-  gridLineH[1][1][0] = 475;    gridLineH[1][1][1] = fontHeight +   80;
+  gridLineH[1][0][0] = 1;      gridLineH[1][0][1] = gridHeight +   80;
+  gridLineH[1][1][0] = 475;    gridLineH[1][1][1] = gridHeight +   80;
   
-  gridLineH[2][0][0] = 1;      gridLineH[2][0][1] = fontHeight +  150;
-  gridLineH[2][1][0] = 475;    gridLineH[2][1][1] = fontHeight +  150;
+  gridLineH[2][0][0] = 1;      gridLineH[2][0][1] = gridHeight +  150;
+  gridLineH[2][1][0] = 475;    gridLineH[2][1][1] = gridHeight +  150;
   
-  gridLineH[3][0][0] = 1;      gridLineH[3][0][1] = fontHeight +  220;
-  gridLineH[3][1][0] = 475;    gridLineH[3][1][1] = fontHeight +  220;
+  gridLineH[3][0][0] = 1;      gridLineH[3][0][1] = gridHeight +  220;
+  gridLineH[3][1][0] = 475;    gridLineH[3][1][1] = gridHeight +  220;
   
   // 3 vertical grid lines
   // at x = 
   // 1
   // 237
   // 475
-  gridLineV[0][0][0] = 1;       gridLineV[0][0][1] = fontHeight +  10;
-  gridLineV[0][1][0] = 1;       gridLineV[0][1][1] = fontHeight + 220;
-  gridLineV[1][0][0] = 237;     gridLineV[1][0][1] = fontHeight +  10;
-  gridLineV[1][1][0] = 237;     gridLineV[1][1][1] = fontHeight + 220;
-  gridLineV[2][0][0] = 475;     gridLineV[2][0][1] = fontHeight +  10;
-  gridLineV[2][1][0] = 475;     gridLineV[2][1][1] = fontHeight + 220;
+  gridLineV[0][0][0] = 1;       gridLineV[0][0][1] = gridHeight +  10;
+  gridLineV[0][1][0] = 1;       gridLineV[0][1][1] = gridHeight + 220;
+  gridLineV[1][0][0] = 237;     gridLineV[1][0][1] = gridHeight +  10;
+  gridLineV[1][1][0] = 237;     gridLineV[1][1][1] = gridHeight + 220;
+  gridLineV[2][0][0] = 475;     gridLineV[2][0][1] = gridHeight +  10;
+  gridLineV[2][1][0] = 475;     gridLineV[2][1][1] = gridHeight + 220;
   // V               V               V
   // 0               1               2
   // ==G0===============G1============  H0
@@ -749,12 +777,12 @@ void SetupGrid(const GFXfont* font)
   cellPoint[0][4][0] = gridLineV[1][0][0] +  75;              cellPoint[0][4][1] = gridLineH[0][0][1] + 5;
   cellPoint[0][5][0] = gridLineV[1][0][0] +   5;              cellPoint[0][5][1] = gridLineH[0][0][1] + 5;
   // cell row 1
-  cellPoint[1][0][0] = gridLineV[0][0][0] +   5;              cellPoint[1][0][1] = gridLineH[0][0][1] + fontHeight + 5;
-  cellPoint[1][1][0] = gridLineV[0][0][0] +  75;              cellPoint[1][1][1] = gridLineH[0][0][1] + fontHeight + 5;
-  cellPoint[1][2][0] = gridLineV[0][0][0] + 145;              cellPoint[1][2][1] = gridLineH[0][0][1] + fontHeight + 5;
-  cellPoint[1][3][0] = gridLineV[1][0][0] + 145;              cellPoint[1][3][1] = gridLineH[0][0][1] + fontHeight + 5;
-  cellPoint[1][4][0] = gridLineV[1][0][0] +  75;              cellPoint[1][4][1] = gridLineH[0][0][1] + fontHeight + 5;
-  cellPoint[1][5][0] = gridLineV[1][0][0] +   5;              cellPoint[1][5][1] = gridLineH[0][0][1] + fontHeight + 5;
+  cellPoint[1][0][0] = gridLineV[0][0][0] +   5;              cellPoint[1][0][1] = gridLineH[0][0][1] + gridHeight + 5;
+  cellPoint[1][1][0] = gridLineV[0][0][0] +  75;              cellPoint[1][1][1] = gridLineH[0][0][1] + gridHeight + 5;
+  cellPoint[1][2][0] = gridLineV[0][0][0] + 145;              cellPoint[1][2][1] = gridLineH[0][0][1] + gridHeight + 5;
+  cellPoint[1][3][0] = gridLineV[1][0][0] + 145;              cellPoint[1][3][1] = gridLineH[0][0][1] + gridHeight + 5;
+  cellPoint[1][4][0] = gridLineV[1][0][0] +  75;              cellPoint[1][4][1] = gridLineH[0][0][1] + gridHeight + 5;
+  cellPoint[1][5][0] = gridLineV[1][0][0] +   5;              cellPoint[1][5][1] = gridLineH[0][0][1] + gridHeight + 5;
   // grid row 1
   // cell row 2
   cellPoint[2][0][0] = gridLineV[0][0][0] +   5;              cellPoint[2][0][1] = gridLineH[1][0][1] + 5;
@@ -764,12 +792,12 @@ void SetupGrid(const GFXfont* font)
   cellPoint[2][4][0] = gridLineV[1][0][0] +  75;              cellPoint[2][4][1] = gridLineH[1][0][1] + 5;
   cellPoint[2][5][0] = gridLineV[1][0][0] +   5;              cellPoint[2][5][1] = gridLineH[1][0][1] + 5;
   // cell row 3
-  cellPoint[3][0][0] = gridLineV[0][0][0] +   5;              cellPoint[3][0][1] = gridLineH[1][0][1] + fontHeight + 5;
-  cellPoint[3][1][0] = gridLineV[0][0][0] +  75;              cellPoint[3][1][1] = gridLineH[1][0][1] + fontHeight + 5;
-  cellPoint[3][2][0] = gridLineV[0][0][0] + 145;              cellPoint[3][2][1] = gridLineH[1][0][1] + fontHeight + 5;
-  cellPoint[3][3][0] = gridLineV[1][0][0] + 145;              cellPoint[3][3][1] = gridLineH[1][0][1] + fontHeight + 5;
-  cellPoint[3][4][0] = gridLineV[1][0][0] +  75;              cellPoint[3][4][1] = gridLineH[1][0][1] + fontHeight + 5;
-  cellPoint[3][5][0] = gridLineV[1][0][0] +   5;              cellPoint[3][5][1] = gridLineH[1][0][1] + fontHeight + 5;
+  cellPoint[3][0][0] = gridLineV[0][0][0] +   5;              cellPoint[3][0][1] = gridLineH[1][0][1] + gridHeight + 5;
+  cellPoint[3][1][0] = gridLineV[0][0][0] +  75;              cellPoint[3][1][1] = gridLineH[1][0][1] + gridHeight + 5;
+  cellPoint[3][2][0] = gridLineV[0][0][0] + 145;              cellPoint[3][2][1] = gridLineH[1][0][1] + gridHeight + 5;
+  cellPoint[3][3][0] = gridLineV[1][0][0] + 145;              cellPoint[3][3][1] = gridLineH[1][0][1] + gridHeight + 5;
+  cellPoint[3][4][0] = gridLineV[1][0][0] +  75;              cellPoint[3][4][1] = gridLineH[1][0][1] + gridHeight + 5;
+  cellPoint[3][5][0] = gridLineV[1][0][0] +   5;              cellPoint[3][5][1] = gridLineH[1][0][1] + gridHeight + 5;
   // grid row 2
   // cell row 4
   cellPoint[4][0][0] = gridLineV[0][0][0] +   5;              cellPoint[4][0][1] = gridLineH[2][0][1] + 5;
@@ -779,19 +807,21 @@ void SetupGrid(const GFXfont* font)
   cellPoint[4][4][0] = gridLineV[1][0][0] +  75;              cellPoint[4][4][1] = gridLineH[2][0][1] + 5;
   cellPoint[4][5][0] = gridLineV[1][0][0] +   5;              cellPoint[4][5][1] = gridLineH[2][0][1] + 5;
   // cell row 5
-  cellPoint[5][0][0] = gridLineV[0][0][0] +   5;              cellPoint[5][0][1] = gridLineH[2][0][1] + fontHeight + 5;
-  cellPoint[5][1][0] = gridLineV[0][0][0] +  75;              cellPoint[5][1][1] = gridLineH[2][0][1] + fontHeight + 5;
-  cellPoint[5][2][0] = gridLineV[0][0][0] + 145;              cellPoint[5][2][1] = gridLineH[2][0][1] + fontHeight + 5;
-  cellPoint[5][3][0] = gridLineV[1][0][0] + 145;              cellPoint[5][3][1] = gridLineH[2][0][1] + fontHeight + 5;
-  cellPoint[5][4][0] = gridLineV[1][0][0] +  75;              cellPoint[5][4][1] = gridLineH[2][0][1] + fontHeight + 5;
-  cellPoint[5][5][0] = gridLineV[1][0][0] +   5;              cellPoint[5][5][1] = gridLineH[2][0][1] + fontHeight + 5;
+  cellPoint[5][0][0] = gridLineV[0][0][0] +   5;              cellPoint[5][0][1] = gridLineH[2][0][1] + gridHeight + 5;
+  cellPoint[5][1][0] = gridLineV[0][0][0] +  75;              cellPoint[5][1][1] = gridLineH[2][0][1] + gridHeight + 5;
+  cellPoint[5][2][0] = gridLineV[0][0][0] + 145;              cellPoint[5][2][1] = gridLineH[2][0][1] + gridHeight + 5;
+  cellPoint[5][3][0] = gridLineV[1][0][0] + 145;              cellPoint[5][3][1] = gridLineH[2][0][1] + gridHeight + 5;
+  cellPoint[5][4][0] = gridLineV[1][0][0] +  75;              cellPoint[5][4][1] = gridLineH[2][0][1] + gridHeight + 5;
+  cellPoint[5][5][0] = gridLineV[1][0][0] +   5;              cellPoint[5][5][1] = gridLineH[2][0][1] + gridHeight + 5;
   // cell row 6
-  cellPoint[6][0][0] = gridLineV[0][0][0] +   5;              cellPoint[6][0][1] = gridLineH[3][0][1] + fontHeight + 10;
-  cellPoint[6][1][0] = gridLineV[0][0][0] +  75;              cellPoint[6][1][1] = gridLineH[3][0][1] + fontHeight + 10;
-  cellPoint[6][2][0] = gridLineV[0][0][0] + 145;              cellPoint[6][2][1] = gridLineH[3][0][1] + fontHeight + 10;
-  cellPoint[6][3][0] = gridLineV[1][0][0] + 145;              cellPoint[6][3][1] = gridLineH[3][0][1] + fontHeight + 10;
-  cellPoint[6][4][0] = gridLineV[1][0][0] +  75;              cellPoint[6][4][1] = gridLineH[3][0][1] + fontHeight + 10;
-  cellPoint[6][5][0] = gridLineV[1][0][0] +   5;              cellPoint[6][5][1] = gridLineH[3][0][1] + fontHeight + 10;
+  cellPoint[6][0][0] = gridLineV[0][0][0] +   5;              cellPoint[6][0][1] = gridLineH[3][0][1] + gridHeight + 10;
+  cellPoint[6][1][0] = gridLineV[0][0][0] +  75;              cellPoint[6][1][1] = gridLineH[3][0][1] + gridHeight + 10;
+  cellPoint[6][2][0] = gridLineV[0][0][0] + 145;              cellPoint[6][2][1] = gridLineH[3][0][1] + gridHeight + 10;
+  cellPoint[6][3][0] = gridLineV[1][0][0] + 145;              cellPoint[6][3][1] = gridLineH[3][0][1] + gridHeight + 10;
+  cellPoint[6][4][0] = gridLineV[1][0][0] +  75;              cellPoint[6][4][1] = gridLineH[3][0][1] + gridHeight + 10;
+  cellPoint[6][5][0] = gridLineV[1][0][0] +   5;              cellPoint[6][5][1] = gridLineH[3][0][1] + gridHeight + 10;
+
+  SetFont(fontHeight);
 }
 ///
 ///
@@ -814,7 +844,7 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
   DrawGrid(currentResultCar.tireCount);
 
   sprintf(outStr, "%s %s", currentResultCar.carName.c_str(), currentResultCar.dateTime.c_str());
-  tftDisplay.setFreeFont(FSS12);
+  SetFont(deviceSettings.fontPoints <= 12 ? deviceSettings.fontPoints : 12);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
   tftDisplay.drawString(outStr, 5, 0, GFXFF);
 
@@ -924,12 +954,10 @@ void MeasureAllTireTemps()
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
   DrawGrid(cars[selectedCar].tireCount);
-  
+  SetFont(deviceSettings.fontPoints <= 12 ? deviceSettings.fontPoints : 12);
   while(true)
   {
     sprintf(outStr, "%s", cars[selectedCar].carName.c_str());
-    tftDisplay.setFreeFont(FSS12);
-    tftDisplay.setTextDatum(TL_DATUM);
     tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
     tftDisplay.drawString(outStr, 5, 0, GFXFF);
 
@@ -982,7 +1010,6 @@ void MeasureAllTireTemps()
           {
             sprintf(outStr, "%s", cars[selectedCar].positionShortName[tirePosIdx].c_str());
           }
-          int fontHeight = tftDisplay.fontHeight(GFXFF);
           if(idxTire == selTire)
           {
             // full background highlight rectangle
@@ -1074,13 +1101,13 @@ void MeasureAllTireTemps()
   }
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
-  tftDisplay.setFreeFont(FSS12);
+  SetFont(deviceSettings.fontPoints);// <= 12 ? deviceSettings.fontPoints : 12);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
   textPosition[0] = 5;
   textPosition[1] = 5;
 
   tftDisplay.drawString("Done", textPosition[0], textPosition[1], GFXFF);
-  textPosition[1] += tftDisplay.fontHeight();
+  textPosition[1] += fontHeight;
   tftDisplay.drawString("Storing results...", textPosition[0], textPosition[1], GFXFF);
     // done, copy local to global
   #ifdef HAS_RTC
@@ -1130,7 +1157,7 @@ void MeasureAllTireTemps()
 
   AppendFile(SD, outStr, fileLine.c_str());
   // update the HTML file
-  textPosition[1] += tftDisplay.fontHeight();
+  textPosition[1] += fontHeight;
   tftDisplay.drawString("Updating HTML...", textPosition[0], textPosition[1], GFXFF);
   WriteResultsHTML();  
 }
@@ -1176,8 +1203,15 @@ int GetNextTire(int selTire, int nextDirection)
 //
 void DrawCellText(int row, int col, char* outStr, uint16_t textColor, uint16_t backColor)
 {
-  tftDisplay.setFreeFont(FSS12);
-  tftDisplay.setTextDatum(TL_DATUM);
+  //SetFont(deviceSettings.fontPoints);
+  //tftDisplay.setTextDatum(TL_DATUM);
+  //strcat(outStr, " ");
+  String blankStr = "00000";
+  tftDisplay.setTextColor(backColor, backColor);
+  if(strlen(outStr) > 1)
+  {
+    tftDisplay.fillRect(cellPoint[row][col][0], cellPoint[row][col][1], tftDisplay.textWidth(blankStr.c_str()), fontHeight - 4, backColor);
+  }
   tftDisplay.setTextColor(textColor, backColor);
   tftDisplay.drawString(outStr, cellPoint[row][col][0], cellPoint[row][col][1], GFXFF);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -1185,7 +1219,7 @@ void DrawCellText(int row, int col, char* outStr, uint16_t textColor, uint16_t b
 //
 //
 //
-int MenuSelect(const GFXfont* font, MenuChoice choices[], int menuCount, int initialSelect)
+int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSelect)
 {
   char outStr[256];
   textPosition[0] = 5;
@@ -1209,9 +1243,7 @@ int MenuSelect(const GFXfont* font, MenuChoice choices[], int menuCount, int ini
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
   // loop until selection is made
-  tftDisplay.setFreeFont(font);
-  tftDisplay.setTextDatum(TL_DATUM);
-  int fontHeight = tftDisplay.fontHeight(GFXFF);
+  SetFont(fontSize);
   int linesToDisplay = (tftDisplay.height() - 10)/fontHeight;
   // range of selections to display (allow scrolling)
   int displayRange[2] = {0, linesToDisplay - 1 };
@@ -1300,70 +1332,155 @@ int MenuSelect(const GFXfont* font, MenuChoice choices[], int menuCount, int ini
 //
 void SelectCar()
 {
-
   for(int idx = 0; idx < carCount; idx++)
   {
     choices[idx].description = cars[idx].carName;
     choices[idx].result = idx; 
   }
-  selectedCar =  MenuSelect(FSS12, choices, carCount, 0); 
+  selectedCar =  MenuSelect(deviceSettings.fontPoints, choices, carCount, 0); 
 }
 //
 //
 //
 void ChangeSettings()
 {
-  int menuCount = 7;
+  int menuCount = 10;
   int result =  0;
-  while(result != 6)
+  MenuChoice settingsChoices[10];
+ 
+  while(true)
   {
-    choices[0].description = "Set Date/Time"; choices[0].result = 0;
-    choices[1].description = "Set Units";     choices[1].result = 1;
-    choices[2].description = "Delete Data";   choices[2].result = 2;
-    if(screenRotation == 1)
+    settingsChoices[SET_DATETIME].description = "Set Date/Time"; settingsChoices[SET_DATETIME].result = SET_DATETIME;
+    settingsChoices[SET_TEMPUNITS].description = "Set Units";     settingsChoices[SET_TEMPUNITS].result = SET_TEMPUNITS;
+    // flip display and buttons
+    if(deviceSettings.screenRotation == 1)
     {
-      choices[3].description = "Switch to Left Hand (invert screen)"; choices[3].result = 3;      
+      settingsChoices[SET_FLIPDISPLAY].description = "Switch to Left Hand (invert screen)"; settingsChoices[SET_FLIPDISPLAY].result = SET_FLIPDISPLAY;      
     }
     else
     {
-      choices[3].description = "Switch to Right Hand (invert screen)"; choices[3].result = 3;      
+      settingsChoices[SET_FLIPDISPLAY].description = "Switch to Right Hand (invert screen)"; settingsChoices[SET_FLIPDISPLAY].result = SET_FLIPDISPLAY;      
     }
-    
-    
-    sprintf(buf, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
-    choices[4].description = buf;             choices[4].result = 4;
-    sprintf(buf, "Pass %s", pass);
-    choices[5].description = buf;             choices[5].result = 5;
+    settingsChoices[SET_FONTSIZE].description = "Font size";             settingsChoices[SET_FONTSIZE].result = SET_FONTSIZE;
+    settingsChoices[SET_12H24H].description = "12 or 24 hour clock";     settingsChoices[SET_12H24H].result = SET_12H24H;
 
-    choices[6].description = "Exit";          choices[6].result = 6;
-    result =  MenuSelect(FSS12, choices, menuCount, 0); 
+
+    settingsChoices[SET_DELETEDATA].description = "Delete Data";   settingsChoices[SET_DELETEDATA].result = SET_DELETEDATA;
+    // IP address
+    sprintf(buf, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
+    settingsChoices[SET_IPADDRESS].description = buf;             settingsChoices[SET_IPADDRESS].result = SET_IPADDRESS;
+    // password
+    sprintf(buf, "Pass %s", deviceSettings.pass);
+    settingsChoices[SET_PASS].description = buf;             settingsChoices[SET_PASS].result = SET_PASS;
+    // save
+    settingsChoices[SET_SAVESETTINGS].description = "Save Settings"; settingsChoices[SET_SAVESETTINGS].result = SET_SAVESETTINGS;
+    // exit settings
+    settingsChoices[SET_EXIT].description = "Exit";          settingsChoices[SET_EXIT].result = SET_EXIT;
+    result =  MenuSelect(deviceSettings.fontPoints, settingsChoices, menuCount, 0); 
     switch(result)
     {
-      case 0:
+      case SET_DATETIME:
         SetDateTime();
         break;
-      case 1:
+      case SET_TEMPUNITS:
         SetUnits();
         break;
-      case 2:
+      case SET_DELETEDATA:
         DeleteDataFile();
         break;
-      case 3:
-        screenRotation = screenRotation == 1 ? 3 : 1;
-        tftDisplay.setRotation(screenRotation);
-        tftDisplay.fillScreen(TFT_BLACK);
-        int reverseButtons[BUTTON_COUNT];
-        for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
-        {
-          reverseButtons[BUTTON_COUNT - (btnIdx + 1)] = buttons[btnIdx].buttonPin;
-        }
-        for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
-        {
-          buttons[btnIdx].buttonPin = reverseButtons[btnIdx];
-        }
+      case SET_FLIPDISPLAY:
+        deviceSettings.screenRotation = deviceSettings.screenRotation == 1 ? 3 : 1;
+        RotateDisplay(true);
         break;
+      case SET_FONTSIZE:
+        SelectFontSize();
+        break;
+      case SET_12H24H:
+        Select12or24();
+        break;
+      case SET_SAVESETTINGS:
+        WriteDeviceSetupFile(SD, "/py_setup.txt");
+        break;
+      case SET_IPADDRESS:
+        break;
+      case SET_PASS:
+        break;
+      case SET_EXIT:
+        return;
       default:
         break;
+    }
+  }
+}
+//
+//
+//
+void Select12or24()
+{
+  MenuChoice hour12_24Choices[2];
+  hour12_24Choices[HOURS_12].description  = "12 Hour clock";  hour12_24Choices[HOURS_12].result = HOURS_12;
+  hour12_24Choices[HOURS_24].description = "24 Hour clock"; hour12_24Choices[HOURS_24].result = HOURS_24;
+  int result =  MenuSelect(deviceSettings.fontPoints, hour12_24Choices, 2, 0); 
+  switch(result)
+  {
+    case HOURS_12:
+      deviceSettings.is12Hour  = true;
+      break;
+    case HOURS_24:
+      deviceSettings.is12Hour = false;
+      break;
+    default:
+      break;
+  }
+  return;
+}
+//
+//
+//
+void SelectFontSize()
+{
+  MenuChoice fontSizeChoices[4];
+  fontSizeChoices[FONTSIZE_9].description  = "9 point";  fontSizeChoices[FONTSIZE_9].result = FONTSIZE_9;
+  fontSizeChoices[FONTSIZE_12].description = "12 point"; fontSizeChoices[FONTSIZE_12].result = FONTSIZE_12;
+  fontSizeChoices[FONTSIZE_18].description = "18 point"; fontSizeChoices[FONTSIZE_18].result = FONTSIZE_18;
+  fontSizeChoices[FONTSIZE_24].description = "24 point"; fontSizeChoices[FONTSIZE_24].result = FONTSIZE_24;
+  int result =  MenuSelect(deviceSettings.fontPoints, fontSizeChoices, 4, 0); 
+  switch(result)
+  {
+    case FONTSIZE_9:
+      deviceSettings.fontPoints = 9;
+      break;
+    case FONTSIZE_12:
+      deviceSettings.fontPoints = 12;
+      break;
+    case FONTSIZE_18:
+      deviceSettings.fontPoints = 18;
+      break;
+    case FONTSIZE_24:
+      deviceSettings.fontPoints = 24;
+      break;
+    default:
+    break;
+  }
+  return;
+}
+//
+//
+//
+void RotateDisplay(bool rotateButtons)
+{
+  tftDisplay.setRotation(deviceSettings.screenRotation);
+  tftDisplay.fillScreen(TFT_BLACK);
+  if(rotateButtons)
+  {
+    int reverseButtons[BUTTON_COUNT];
+    for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+    {
+      reverseButtons[BUTTON_COUNT - (btnIdx + 1)] = buttons[btnIdx].buttonPin;
+    }
+    for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+    {
+      buttons[btnIdx].buttonPin = reverseButtons[btnIdx];
     }
   }
 }
@@ -1373,11 +1490,13 @@ void ChangeSettings()
 void SetUnits()
 {
   int menuCount = 2;
-  choices[0].description = "Temp in F";   choices[0].result = 0;
-  choices[1].description = "Temp in C";   choices[1].result = 1;
-  int menuResult =  MenuSelect(FSS12, choices, menuCount, 0); 
+  MenuChoice unitsChoices[2];
+
+  unitsChoices[0].description = "Temp in F";   unitsChoices[0].result = 0;
+  unitsChoices[1].description = "Temp in C";   unitsChoices[1].result = 1;
+  int menuResult =  MenuSelect(deviceSettings.fontPoints, unitsChoices, menuCount, 0); 
   // true for C, false for F
-  tempUnits = menuResult == 1;
+  deviceSettings.tempUnits = menuResult == 1;
 }
 //
 //
@@ -1423,22 +1542,22 @@ void SetDateTime()
     YamuraBanner();
     tftDisplay.drawString("Set date/time", textPosition[0], textPosition[1], GFXFF);
     
-    textPosition[1] += FONT_HEIGHT;
+    textPosition[1] += fontHeight;
 
     sprintf(outStr, "%02d/%02d/%04d %s", timeVals[DATE], timeVals[MONTH], timeVals[YEAR], days[timeVals[DAY]]);
     tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     if(setIdx < 4)
     {
-      textPosition[1] += FONT_HEIGHT;
+      textPosition[1] += fontHeight;
       sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "dd" : "  "), (setIdx == 1 ? "mm" : "  "), (setIdx == 2 ? "yyyy" : "    "), (setIdx == 3 ? "ww" : "  "));
       tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
     }
-    textPosition[1] += FONT_HEIGHT;
+    textPosition[1] += fontHeight;
     sprintf(outStr, "%02d:%02d %s", timeVals[HOUR], timeVals[MINUTE], (isPM ? "PM" : "AM"));
     tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
     if(setIdx > 3)
     {
-      textPosition[1] += FONT_HEIGHT;
+      textPosition[1] += fontHeight;
       sprintf(outStr, "%s %s %s", (setIdx == 4 ? "hh" : "  "), (setIdx == 5 ? "mm" : "  "), (setIdx == 6 ? "ap" : "  "));
       tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
     }
@@ -1577,7 +1696,7 @@ void SetDateTime()
   rtc.setMinute(timeVals[MINUTE]);
   rtc.setSecond(timeVals[SECOND]);
   rtc.setClockMode(isPM);
-  textPosition[1] += FONT_HEIGHT * 2;
+  textPosition[1] += fontHeight * 2;
   tftDisplay.drawString(GetStringTime(), textPosition[0], textPosition[1], GFXFF);
   delay(5000);
 }
@@ -1592,7 +1711,7 @@ void DeleteDataFile(bool verify)
     int menuCount = 2;
     choices[0].description = "Yes";      choices[0].result = 1;
     choices[1].description = "No";   choices[1].result = 0;
-    menuResult = MenuSelect (FSS12, choices, menuCount, 1); 
+    menuResult = MenuSelect(deviceSettings.fontPoints, choices, menuCount, 1); 
   }
   if(menuResult == 1)
   {
@@ -1650,7 +1769,7 @@ void ResetTempStable()
 //
 //CarSettings
 //
-void ReadSetupFile(fs::FS &fs, const char * path)
+void ReadCarSetupFile(fs::FS &fs, const char * path)
 {
   File file = fs.open(path, FILE_READ);
   if(!file)
@@ -1707,13 +1826,27 @@ void ReadSetupFile(fs::FS &fs, const char * path)
 //
 //
 //
-void WriteSetupFile(fs::FS &fs, const char * path)
+void WriteCarSetupFile(fs::FS &fs, const char * path)
 {
   File file = fs.open(path, FILE_WRITE);
   if(!file)
   {
     return;
   }
+  Serial.println("Write device settings:");
+  Serial.print("SSID\t\t");
+  Serial.println(deviceSettings.ssid);
+  Serial.print("Password\t");
+  Serial.println(deviceSettings.pass);
+  Serial.print("Orientation\t");
+  Serial.println(deviceSettings.screenRotation);
+  Serial.print("Units flag\t");
+  Serial.println(deviceSettings.tempUnits ? 1 : 0);
+  Serial.print("12Hr flag\t");
+  Serial.println(deviceSettings.is12Hour ? 1 : 0);
+  Serial.print("Font size\t");
+  Serial.println(deviceSettings.fontPoints);
+
   file.println("5");            // number of cars
   file.println("Brian Z4");    // car
   file.println("4");           // wheels
@@ -1828,6 +1961,80 @@ void WriteSetupFile(fs::FS &fs, const char * path)
 //
 //
 //
+void ReadDeviceSetupFile(fs::FS &fs, const char * path)
+{
+  File file = fs.open(path, FILE_READ);
+  if(!file)
+  {
+    return;
+  }
+  ReadLine(file, buf);
+  sprintf(deviceSettings.ssid, buf);
+  ReadLine(file, buf);
+  sprintf(deviceSettings.pass, buf);
+  ReadLine(file, buf);
+  deviceSettings.screenRotation = atoi(buf);
+  int temp = 0;
+  ReadLine(file, buf);
+  temp = atoi(buf);
+  deviceSettings.tempUnits = temp == 0 ? false : true;
+  ReadLine(file, buf);
+  temp = atoi(buf);
+  deviceSettings.is12Hour = temp == 0 ? false : true;
+  ReadLine(file, buf);
+  deviceSettings.fontPoints = atoi(buf);
+  
+  Serial.print("Read from device setup file ");
+  Serial.println(path);
+  Serial.print("SSID\t\t");
+  Serial.println(deviceSettings.ssid);
+  Serial.print("Password\t");
+  Serial.println(deviceSettings.pass);
+  Serial.print("Orientation\t");
+  Serial.println(deviceSettings.screenRotation);
+  Serial.print("Units flag\t");
+  Serial.println(deviceSettings.tempUnits ? 1 : 0);
+  Serial.print("12Hr flag\t");
+  Serial.println(deviceSettings.is12Hour ? 1 : 0);
+  Serial.print("Font size\t");
+  Serial.println(deviceSettings.fontPoints);
+}
+//
+//
+//
+void WriteDeviceSetupFile(fs::FS &fs, const char * path)
+{
+  DeleteFile(fs, path);
+  File file = fs.open(path, FILE_WRITE);
+  if(!file)
+  {
+    return;
+  }
+  Serial.print("Write to device setup file ");
+  Serial.println(path);
+  Serial.print("SSID\t\t");
+  Serial.println(deviceSettings.ssid);
+  Serial.print("Password\t");
+  Serial.println(deviceSettings.pass);
+  Serial.print("Orientation\t");
+  Serial.println(deviceSettings.screenRotation);
+  Serial.print("Units flag\t");
+  Serial.println(deviceSettings.tempUnits ? 1 : 0);
+  Serial.print("12Hr flag\t");
+  Serial.println(deviceSettings.is12Hour ? 1 : 0);
+  Serial.print("Font size\t");
+  Serial.println(deviceSettings.fontPoints);  
+
+  file.println(deviceSettings.ssid);
+  file.println(deviceSettings.pass);
+  file.println(deviceSettings.screenRotation);
+  file.println(deviceSettings.tempUnits ? 1 : 0);
+  file.println(deviceSettings.is12Hour ? 1 : 0);
+  file.println(deviceSettings.fontPoints);
+}
+//
+//
+//
 void DisplaySelectedResults(fs::FS &fs, const char * path)
 {
   CarSettings currentResultCar;
@@ -1846,13 +2053,13 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     tftDisplay.fillScreen(TFT_BLACK);
     YamuraBanner();
     tftDisplay.drawString("No results for", 5, 0,  GFXFF);
-    tftDisplay.drawString(cars[selectedCar].carName.c_str(), 5, FONT_HEIGHT, GFXFF);
-    tftDisplay.drawString("Select another car", 5, 2* FONT_HEIGHT, GFXFF);
+    tftDisplay.drawString(cars[selectedCar].carName.c_str(), 5, fontHeight, GFXFF);
+    tftDisplay.drawString("Select another car", 5, 2* fontHeight, GFXFF);
     delay(5000);
     return;
   }
   int menuCnt = 0;
-  while(true)
+  while(menuCnt < MAX_MENU_ITEMS)
   {
     ReadLine(file, buf);
     if(strlen(buf) == 0)
@@ -1860,13 +2067,13 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
       break;
     }
     token = strtok(buf, ";");
-    char outStr[128];//String measureTime = token;
-    sprintf(outStr, "%s %s", cars[selectedCar].carName, token);      
+    char outStr[128];
+    sprintf(outStr, "%s %s", cars[selectedCar].carName, token);
     choices[menuCnt].description = outStr;
     choices[menuCnt].result = menuCnt;
     menuCnt++;
   }
-  int menuResult = MenuSelect(FSS12, choices, menuCnt, 0);
+  int menuResult = MenuSelect(deviceSettings.fontPoints, choices, menuCnt, 0);
   file.close();
   // at this point, we need to parse the selected line and add to a measurment structure for display
   // get to the correct line
@@ -1876,8 +2083,8 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     tftDisplay.fillScreen(TFT_BLACK);
     YamuraBanner();
     tftDisplay.drawString("No results for", 5, 0, GFXFF);
-    tftDisplay.drawString(cars[selectedCar].carName.c_str(), 5, FONT_HEIGHT, GFXFF);
-    tftDisplay.drawString("Select another car", 5, 2* FONT_HEIGHT, GFXFF);
+    tftDisplay.drawString(cars[selectedCar].carName.c_str(), 5, fontHeight, GFXFF);
+    tftDisplay.drawString("Select another car", 5, 2* fontHeight, GFXFF);
     delay(5000);
     return;
   }
@@ -2368,11 +2575,36 @@ void CheckButtons(unsigned long curTime)
 void YamuraBanner()
 {
   tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
-  tftDisplay.setFreeFont(FSS9);     // Select the orginal small GLCD font by using NULL or GLCD
-  int fontHt = tftDisplay.fontHeight(GFXFF);
+  SetFont(9);
   int xPos = tftDisplay.width()/2;
-  int yPos = tftDisplay.height() - fontHt/2;
+  int yPos = tftDisplay.height() - fontHeight/2;
   tftDisplay.setTextDatum(BC_DATUM);
   tftDisplay.drawString("  Yamura Recording Tire Pyrometer v1.0  ",xPos, yPos, GFXFF);    // Print the font name onto the TFT screen
   tftDisplay.setTextDatum(TL_DATUM);
+}
+//
+//
+//
+void SetFont(int fontSize)
+{
+  switch(fontSize)
+  {
+    case 9:
+      tftDisplay.setFreeFont(FSS9);
+      break;
+    case 12:
+      tftDisplay.setFreeFont(FSS12);
+      break;
+    case 18:
+      tftDisplay.setFreeFont(FSS18);
+      break;
+    case 24:
+      tftDisplay.setFreeFont(FSS18);
+      break;
+    default:
+      tftDisplay.setFreeFont(FSS12);
+      break;
+  }
+  tftDisplay.setTextDatum(TL_DATUM);
+  fontHeight = tftDisplay.fontHeight(GFXFF);
 }
