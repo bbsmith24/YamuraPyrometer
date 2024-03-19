@@ -35,19 +35,8 @@
 #include "SD.h"
 #include "SPI.h"
 #include <SparkFun_MCP9600.h>    // thermocouple amplifier
-// various RTC module libraries
-//#define RTC_RV1805
-//#define RTC_RV8803
-#define HILETGO_DS3231
-#ifdef RTC_RV1805
-#include <SparkFun_RV1805.h>
-#endif
-#ifdef RTC_RV8803
-#include <SparkFun_RV8803.h> //Get the library here:http://librarymanager/All#SparkFun_RV-8803
-#endif
-#ifdef HILETGO_DS3231
-#include <DS3231-RTC.h> // https://github.com/hasenradball/DS3231-RTC
-#endif
+#include "RTClib.h"   // PCF8563 RTC library https://github.com/adafruit/RTClib
+
 // car info structure
 struct CarSettings
 {
@@ -113,7 +102,6 @@ void handleNotFound(AsyncWebServerRequest *request);
 void onServoInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
 String GetStringTime();
 String GetStringDate();
-bool UpdateTime();
 void CheckButtons(unsigned long curTime);
 void YamuraBanner();
 void SetFont(int fontSize);
@@ -205,15 +193,7 @@ float currentTemps[18];
 // thermocouple amplifier
 MCP9600 tempSensor;
 // rtc
-#ifdef RTC_RV1805
-RV1805 rtc;
-#endif
-#ifdef RTC_RV8803
-RV8803 rtc;
-#endif
-#ifdef HILETGO_DS3231
-DS3231 rtc;
-#endif
+RTC_PCF8563 rtc;
 
 bool century = false;
 bool h12Flag;
@@ -372,17 +352,45 @@ void setup()
       break;
   }
   #ifdef HAS_RTC
-  #ifndef HILETGO_DS3231
-    if (rtc.begin() == false) 
-    {
-      tftDisplay.drawString("RTC FAIL", textPosition[0], textPosition[1], GFXFF);
-      while(true);
-    }
+  while (!rtc.begin()) 
+  {
+    Serial.println("Couldn't find RTC...retry");
+    Serial.flush();
     delay(1000);
+  }
+  #ifdef SET_DATETIME
+  Serial.println("Set date and time to system");
+  delay(5000);
+  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   #endif
-  #endif
+
+  if (rtc.lostPower()) 
+  {
+    delay(5000);
+    Serial.println("RTC is NOT initialized, let's set the time!");
+    // When time needs to be set on a new device, or after a power loss, the
+    // following line sets the RTC to the date & time this sketch was compiled
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    // This line sets the RTC with an explicit date & time, for example to set
+    // January 21, 2014 at 3am you would call:
+    // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
+    //
+    // Note: allow 2 seconds after inserting battery or applying external power
+    // without battery before calling adjust(). This gives the PCF8523's
+    // crystal oscillator time to stabilize. If you call adjust() very quickly
+    // after the RTC is powered, lostPower() may still return true.
+  }
+  else
+  {
+    Serial.println("RTC initialized, time already set");
+  }
+  // When the RTC was stopped and stays connected to the battery, it has
+  // to be restarted by clearing the STOP bit. Let's do this to ensure
+  // the RTC is running.
+  rtc.start();
   tftDisplay.drawString("RTC OK", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
+  #endif
 
   for(int idx = 0; idx < BUTTON_COUNT; idx++)
   {
@@ -415,10 +423,7 @@ void setup()
   ResetTempStable();
 
   #ifdef HAS_RTC
-  //Updates the time variables from RTC
-  UpdateTime();
-  #endif
-  #ifdef HAS_RTC
+  // get time from RTC
   sprintf(outStr, "%s %s", GetStringTime().c_str(), GetStringDate().c_str());
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
@@ -664,14 +669,33 @@ void InstantTemp()
   YamuraBanner();
   SetFont(deviceSettings.fontPoints);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
-  tftDisplay.drawString("Temperature", textPosition[0], textPosition[1], GFXFF);
+  sprintf(outStr, "Temperature at %s %s", GetStringTime(), GetStringDate());
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] +=  fontHeight;
   sprintf(outStr, " ");
+  SetFont(24);
+  textPosition[0] = tftDisplay.width()/2;
+  textPosition[1] = tftDisplay.height()/2;
+  tftDisplay.setTextDatum(TC_DATUM);
+ 
   while(true)
   {
     curTime = millis();
     if(curTime - priorTime > 1000)
     {
+      textPosition[0] = 5;
+      textPosition[1] = 0;
+      SetFont(deviceSettings.fontPoints);
+      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+      sprintf(outStr, "Temperature at %s %s", GetStringTime(), GetStringDate());
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+      textPosition[1] +=  fontHeight;
+      sprintf(outStr, " ");
+      SetFont(24);
+      textPosition[0] = tftDisplay.width()/2;
+      textPosition[1] = tftDisplay.height()/2;
+      tftDisplay.setTextDatum(TC_DATUM);
+
       priorTime = curTime;
       // read temp
       #ifdef HAS_THERMO
@@ -693,6 +717,7 @@ void InstantTemp()
       break;
     }
   }
+  SetFont(deviceSettings.fontPoints);
 }
 //
 //
@@ -1107,7 +1132,6 @@ void MeasureAllTireTemps()
   tftDisplay.drawString("Storing results...", textPosition[0], textPosition[1], GFXFF);
     // done, copy local to global
   #ifdef HAS_RTC
-  UpdateTime();
   cars[selectedCar].dateTime = GetStringTime();
   String curTimeStr;
   curTimeStr = GetStringTime();
@@ -1497,208 +1521,6 @@ void SetUnits()
   int menuResult =  MenuSelect(deviceSettings.fontPoints, unitsChoices, menuCount, 0); 
   // true for C, false for F
   deviceSettings.tempUnits = menuResult == 1;
-}
-//
-//
-//
-void SetDateTime()
-{
-  char outStr[256];
-  int timeVals[8] = {0, 0, 0, 0, 0, 0, 0, 0};  // date, month, year, day, hour, min, sec, 100ths
-  bool isPM = false;
-  // location of text
-  int textPosition[2] = {5, 0};
-  int setIdx = 0;
-  unsigned long curTime = millis();
-  int delta = 0;
-  #ifndef HAS_RTC
-  tftDisplay.fillScreen(TFT_BLACK);
-  YamuraBanner();
-  tftDisplay.drawString("RTC not present", textPosition[0], textPosition[1], GFXFF);
-  delay(5000);
-  return;
-  #endif
-
-  UpdateTime();
-  timeVals[DATE] = rtc.getDate();
-  timeVals[MONTH] = rtc.getMonth(century);
-  if (century) 
-  {
-    timeVals[YEAR] += 100;
-	}
-  timeVals[DAY] = rtc.getDoW();
-  timeVals[HOUR] = rtc.getHour(h12Flag, isPM);
-  timeVals[MINUTE] = rtc.getMinute();
-  //isPM = rtc.isPM();
-  for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
-  {
-    buttons[btnIdx].buttonReleased = false;
-  }
-  while(true)
-  {
-    textPosition[0] = 5;
-    textPosition[1] = 0;
-    tftDisplay.fillScreen(TFT_BLACK);
-    YamuraBanner();
-    tftDisplay.drawString("Set date/time", textPosition[0], textPosition[1], GFXFF);
-    
-    textPosition[1] += fontHeight;
-
-    sprintf(outStr, "%02d/%02d/%04d %s", timeVals[DATE], timeVals[MONTH], timeVals[YEAR], days[timeVals[DAY]]);
-    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
-    if(setIdx < 4)
-    {
-      textPosition[1] += fontHeight;
-      sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "dd" : "  "), (setIdx == 1 ? "mm" : "  "), (setIdx == 2 ? "yyyy" : "    "), (setIdx == 3 ? "ww" : "  "));
-      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
-    }
-    textPosition[1] += fontHeight;
-    sprintf(outStr, "%02d:%02d %s", timeVals[HOUR], timeVals[MINUTE], (isPM ? "PM" : "AM"));
-    tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
-    if(setIdx > 3)
-    {
-      textPosition[1] += fontHeight;
-      sprintf(outStr, "%s %s %s", (setIdx == 4 ? "hh" : "  "), (setIdx == 5 ? "mm" : "  "), (setIdx == 6 ? "ap" : "  "));
-      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
-    }
-    
-    while(!buttons[0].buttonReleased)
-    {
-      curTime = millis();
-      CheckButtons(curTime);
-      // save time element, advance
-      if(buttons[0].buttonReleased)
-      {
-        buttons[0].buttonReleased = false;
-        setIdx++;
-        if(setIdx > 6)
-        {
-          break;
-        }
-      }
-      // increase/decrease
-      else if(buttons[1].buttonReleased)
-      {
-        buttons[1].buttonReleased = false;
-        delta = -1;
-      }
-      else if(buttons[2].buttonReleased)
-      {
-        buttons[2].buttonReleased = false;
-        delta = 1;
-      }
-      else
-      {
-        delta = 0;
-        continue;
-      }
-      switch (setIdx)
-      {
-        case 0:  // date
-          timeVals[DATE] += delta;
-          if(timeVals[DATE] <= 0)
-          {
-            timeVals[DATE] = 31;
-          }
-          if(timeVals[DATE] > 31)
-          {
-            timeVals[DATE] = 1;
-          }
-          break;
-        case 1:  // month
-          timeVals[MONTH] += delta;
-          if(timeVals[MONTH] <= 0)
-          {
-            timeVals[MONTH] = 12;
-          }
-          if(timeVals[MONTH] > 12)
-          {
-            timeVals[MONTH] = 1;
-          }
-          break;
-        case 2:  // year
-          if(timeVals[YEAR] < 2020)
-          {
-            timeVals[YEAR] = 2020;
-          }
-          if(timeVals[YEAR] > 2100)
-          {
-            timeVals[YEAR] = 2020;
-          }
-          timeVals[YEAR] += delta;
-          break;
-        case 3:  // day
-          timeVals[DAY] += delta;
-          if(timeVals[DAY] < 0)
-          {
-            timeVals[DAY] = 6;
-          }
-          if(timeVals[DAY] > 6)
-          {
-            timeVals[DAY] = 0;
-          }
-          break;
-        case 4:  // hour
-          timeVals[HOUR] += delta;
-          if(timeVals[HOUR] < 0)
-          {
-            timeVals[HOUR] = 12;
-          }
-          if(timeVals[HOUR] > 12)
-          {
-            timeVals[HOUR] = 1;
-          }
-          break;
-        case 5:  // minute
-          timeVals[MINUTE] += delta;
-          if(timeVals[MINUTE] < 0)
-          {
-            timeVals[MINUTE] = 59;
-          }
-          if(timeVals[MINUTE] > 59)
-          {
-            timeVals[MINUTE] = 0;
-          }
-          break;
-        case 6:  // am/pm
-          if(delta != 0)
-          {
-            isPM = !isPM;
-          }
-          break;
-      }
-      break;
-    }
-    if(setIdx > 6)
-    {
-      break;
-    }
-  }
-  if(isPM)
-  {
-    if (timeVals[HOUR] < 12)
-    {
-      timeVals[HOUR] += 12;
-    }
-  }
-  if (century) 
-  {
-    rtc.setYear(timeVals[YEAR] - 2100);
-	}
-  else
-  {
-    rtc.setYear(timeVals[YEAR] - 2000);
-  }
-  rtc.setMonth(timeVals[MONTH]);
-  rtc.setDate(timeVals[DATE]);
-  rtc.setDoW(timeVals[DAY]);
-  rtc.setHour(timeVals[HOUR]);
-  rtc.setMinute(timeVals[MINUTE]);
-  rtc.setSecond(timeVals[SECOND]);
-  rtc.setClockMode(isPM);
-  textPosition[1] += fontHeight * 2;
-  tftDisplay.drawString(GetStringTime(), textPosition[0], textPosition[1], GFXFF);
-  delay(5000);
 }
 //
 //
@@ -2447,28 +2269,29 @@ String GetStringTime()
   String rVal;
   char buf[512];
   int ampm;
-	int hour = 0;
-	int minute = 0;
-	int second = 0;
-  hour = (int)rtc.getHour(h12Flag, pmFlag);
-  minute = (int)rtc.getMinute();
-  second = (int)rtc.getSecond();
-  if (h12Flag) 
+  DateTime now;
+  now = rtc.now();
+  int year = now.year();
+  int month = now.month();
+  int day = now.day();
+  int dayOfWeek = now.dayOfTheWeek();
+	int hour = now.hour();
+	int minute = now.minute();
+	int second = now.second();
+  bool isPM = now.isPM();
+
+  if(deviceSettings.is12Hour)
   {
-		if (pmFlag) 
-    {
-      ampm = 1;
-		} 
-    else 
-    {
-      ampm = 0;
-		}
-	}
+    sprintf(buf, "%02d:%02d%s", hour, minute, ampmStr[isPM ? 1 : 0]);
+  }
   else
   {
-    ampm = 2;
+    if(isPM)
+    {
+      hour += 12;
+    }
+    sprintf(buf, "%02d:%02d", hour, minute);
   }
-  sprintf(buf, "%02d:%02d%s", hour, minute, ampmStr[ampm]);
   rVal = buf;
   return rVal;
 }
@@ -2480,32 +2303,236 @@ String GetStringDate()
   bool century = false;
   String rVal;
   char buf[512];
-  int ampm;
-	// send what's going on to the serial monitor.
-	int year = 2000;
-	int shortYear = 0;
-	int month = 0;
-	int date = 0;
-  int dow = 0;
-	if (century) 
-  {
-    year += 100;
-	}
-  shortYear = (int)rtc.getYear();
-  year += shortYear;
-	month = (int)rtc.getMonth(century);
- 	date = (int)rtc.getDate();
-  dow = (int)rtc.getDoW();
-  sprintf(buf, "%02d/%02d/%02d", month, date, shortYear);
+	DateTime now;
+  now = rtc.now();
+  int year = now.year();
+  int month = now.month();
+  int day = now.day();
+  sprintf(buf, "%02d/%02d/%02d", month, day, year);
   rVal = buf;
   return rVal;
 }
 //
+// set data/time handler
 //
-//
-bool UpdateTime()
+void SetDateTime()
 {
-  return true;
+  char outStr[256];
+  int timeVals[8] = {0, 0, 0, 0, 0, 0, 0, 0};  // date, month, year, day, hour, min, sec, 100ths
+  bool isPM = false;
+  // location of text
+  int textPosition[2] = {5, 0};
+  int setIdx = 0;
+  unsigned long curTime = millis();
+  int delta = 0;
+  #ifndef HAS_RTC
+  tftDisplay.fillScreen(TFT_BLACK);
+  YamuraBanner();
+  tftDisplay.drawString("RTC not present", textPosition[0], textPosition[1], GFXFF);
+  delay(5000);
+  return;
+  #endif
+
+  DateTime now;
+  now = rtc.now();
+  int year = now.year();
+  int month = now.month();
+  int day = now.day();
+  int dayOfWeek = now.dayOfTheWeek();
+
+  timeVals[DATE] = now.day();
+  timeVals[MONTH] = now.month();
+  timeVals[YEAR] = now.year();
+  timeVals[DAY] = now.dayOfTheWeek();
+  timeVals[HOUR] = now.hour();
+  if((now.isPM()) && (!deviceSettings.is12Hour))
+  {
+    timeVals[HOUR] += 12;
+  }
+  timeVals[MINUTE] = now.minute();
+  for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+  {
+    buttons[btnIdx].buttonReleased = false;
+  }
+  while(true)
+  {
+    textPosition[0] = 5;
+    textPosition[1] = 0;
+    tftDisplay.fillScreen(TFT_BLACK);
+    YamuraBanner();
+    tftDisplay.drawString("Set date/time", textPosition[0], textPosition[1], GFXFF);
+    
+    textPosition[1] += fontHeight;
+
+    sprintf(outStr, "%02d/%02d/%04d %s", timeVals[DATE], timeVals[MONTH], timeVals[YEAR], days[timeVals[DAY]]);
+    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
+    if(setIdx < 4)
+    {
+      textPosition[1] += fontHeight;
+      sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "dd" : "  "), (setIdx == 1 ? "mm" : "  "), (setIdx == 2 ? "yyyy" : "    "), (setIdx == 3 ? "ww" : "  "));
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+    }
+    textPosition[1] += fontHeight;
+    sprintf(outStr, "%02d:%02d %s", timeVals[HOUR], timeVals[MINUTE], (isPM ? "PM" : "AM"));
+    tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+    if(setIdx > 3)
+    {
+      textPosition[1] += fontHeight;
+      sprintf(outStr, "%s %s %s", (setIdx == 4 ? "hh" : "  "), (setIdx == 5 ? "mm" : "  "), (setIdx == 6 ? "ap" : "  "));
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+    }
+    
+    while(!buttons[0].buttonReleased)
+    {
+      curTime = millis();
+      CheckButtons(curTime);
+      // save time element, advance
+      if(buttons[0].buttonReleased)
+      {
+        buttons[0].buttonReleased = false;
+        setIdx++;
+        if(setIdx > 6)
+        {
+          break;
+        }
+      }
+      // increase/decrease
+      else if(buttons[1].buttonReleased)
+      {
+        buttons[1].buttonReleased = false;
+        delta = -1;
+      }
+      else if(buttons[2].buttonReleased)
+      {
+        buttons[2].buttonReleased = false;
+        delta = 1;
+      }
+      else
+      {
+        delta = 0;
+        continue;
+      }
+      switch (setIdx)
+      {
+        case 0:  // date
+          timeVals[DATE] += delta;
+          if(timeVals[DATE] <= 0)
+          {
+            timeVals[DATE] = 31;
+          }
+          if(timeVals[DATE] > 31)
+          {
+            timeVals[DATE] = 1;
+          }
+          break;
+        case 1:  // month
+          timeVals[MONTH] += delta;
+          if(timeVals[MONTH] <= 0)
+          {
+            timeVals[MONTH] = 12;
+          }
+          if(timeVals[MONTH] > 12)
+          {
+            timeVals[MONTH] = 1;
+          }
+          break;
+        case 2:  // year
+          //if(timeVals[YEAR] < 2020)
+          //{
+          //  timeVals[YEAR] = 2020;
+          //}
+          //if(timeVals[YEAR] > 2100)
+          //{
+          //  timeVals[YEAR] = 2020;
+          //}
+          timeVals[YEAR] += delta;
+          break;
+        case 3:  // day
+          timeVals[DAY] += delta;
+          if(timeVals[DAY] < 0)
+          {
+            timeVals[DAY] = 6;
+          }
+          if(timeVals[DAY] > 6)
+          {
+            timeVals[DAY] = 0;
+          }
+          break;
+        case 4:  // hour
+          timeVals[HOUR] += delta;
+          if(deviceSettings.is12Hour)
+          {
+            if(timeVals[HOUR] < 0)
+            {
+              timeVals[HOUR] = 12;
+            }
+            if(timeVals[HOUR] > 12)
+            {
+              timeVals[HOUR] = 1;
+            }
+          }
+          else
+          {
+            if(timeVals[HOUR] < 0)
+            {
+              timeVals[HOUR] = 23;
+            }
+            if(timeVals[HOUR] > 23)
+            {
+              timeVals[HOUR] = 0;
+            }
+          }
+          break;
+        case 5:  // minute
+          timeVals[MINUTE] += delta;
+          if(timeVals[MINUTE] < 0)
+          {
+            timeVals[MINUTE] = 59;
+          }
+          if(timeVals[MINUTE] > 59)
+          {
+            timeVals[MINUTE] = 0;
+          }
+          break;
+        case 6:  // am/pm
+          if(delta != 0)
+          {
+            isPM = !isPM;
+          }
+          break;
+      }
+      break;
+    }
+    if(setIdx > 6)
+    {
+      break;
+    }
+  }
+  //if(isPM)
+  //{
+  //  if (timeVals[HOUR] < 12)
+  //  {
+  //    timeVals[HOUR] += 12;
+  //  }
+  //}
+
+  Serial.print("Set date/time to ");
+  Serial.print(timeVals[YEAR]);
+  Serial.print("/");
+  Serial.print(timeVals[MONTH]);
+  Serial.print("/");
+  Serial.print(timeVals[DAY]);
+  Serial.print("\t");
+  Serial.print(timeVals[HOUR]);
+  Serial.print(":");
+  Serial.print(timeVals[MINUTE]);
+  Serial.print(":");
+  Serial.println(timeVals[SECOND]);
+
+  rtc.adjust(DateTime(timeVals[YEAR], timeVals[MONTH], timeVals[DAY], timeVals[HOUR],timeVals[MINUTE],timeVals[SECOND]));
+  textPosition[1] += fontHeight * 2;
+  tftDisplay.drawString(GetStringTime(), textPosition[0], textPosition[1], GFXFF);
+  delay(5000);
 }
 //
 // check all buttons for new press or release
