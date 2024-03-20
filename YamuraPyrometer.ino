@@ -110,6 +110,7 @@ void SetFont(int fontSize);
 //#define DEBUG_VERBOSE
 //#define DEBUG_EXTRA_VERBOSE
 //#define DEBUG_HTML
+//#define SET_TO_SYSTEM_TIME
 // microSD chip select, I2C pins
 #define sd_CS 5
 #define I2C_SDA 21
@@ -151,19 +152,19 @@ void SetFont(int fontSize);
 #define HOURS_12 0
 #define HOURS_24 1
 // index to date/time value array
-#define DATE    0
-#define MONTH   1
-#define YEAR    2
-#define DAY     3
-#define HOUR    4
-#define MINUTE  5
-#define SECOND  6
-#define HUNDSEC 7
+#define DATE          0
+#define MONTH         1
+#define YEAR          2
+#define DAYOFWEEK     3
+#define HOUR          4
+#define MINUTE        5
+#define SECOND        6
+#define HUNDSEC       7
 // user inputs
 #define BUTTON_COUNT 3
-#define BUTTON_1 0
-#define BUTTON_2 1
-#define BUTTON_3 2
+#define BUTTON_1     0
+#define BUTTON_2     1
+#define BUTTON_3     2
 #define BUTTON_RELEASED 0
 #define BUTTON_PRESSED  1
 #define BUTTON_DEBOUNCE_DELAY   20   // ms
@@ -358,7 +359,7 @@ void setup()
     Serial.flush();
     delay(1000);
   }
-  #ifdef SET_DATETIME
+  #ifdef SET_TO_SYSTEM_TIME
   Serial.println("Set date and time to system");
   delay(5000);
   rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
@@ -2279,6 +2280,55 @@ String GetStringTime()
 	int minute = now.minute();
 	int second = now.second();
   bool isPM = now.isPM();
+  if(deviceSettings.is12Hour)
+  {
+    if(isPM)
+    {
+      if(hour > 12)
+      {
+        hour -= 12;
+      }
+    } 
+    else
+    {
+      Serial.print("am");
+    }
+  }
+  else
+  {
+      Serial.print("(24h)");
+  }
+
+  Serial.print("Time: ");
+  Serial.print(hour);
+  Serial.print(":");
+  Serial.print(minute);
+  Serial.print(":");
+  Serial.print(second);
+  if(deviceSettings.is12Hour)
+  {
+    if(isPM)
+    {
+      Serial.print("pm");
+    } 
+    else
+    {
+      Serial.print("am");
+    }
+  }
+  else
+  {
+      Serial.print("(24h)");
+  }
+  Serial.print("\tDate ");
+  Serial.print(month);
+  Serial.print("/");
+  Serial.print(day);
+  Serial.print("/");
+  Serial.print(year);
+  Serial.print(" (");
+  Serial.print(dayOfWeek);
+  Serial.println(")");
 
   if(deviceSettings.is12Hour)
   {
@@ -2286,7 +2336,7 @@ String GetStringTime()
   }
   else
   {
-    if(isPM)
+    if((isPM) && (hour < 12))
     {
       hour += 12;
     }
@@ -2343,7 +2393,7 @@ void SetDateTime()
   timeVals[DATE] = now.day();
   timeVals[MONTH] = now.month();
   timeVals[YEAR] = now.year();
-  timeVals[DAY] = now.dayOfTheWeek();
+  timeVals[DAYOFWEEK] = now.dayOfTheWeek();
   timeVals[HOUR] = now.hour();
   if((now.isPM()) && (!deviceSettings.is12Hour))
   {
@@ -2364,21 +2414,35 @@ void SetDateTime()
     
     textPosition[1] += fontHeight;
 
-    sprintf(outStr, "%02d/%02d/%04d %s", timeVals[DATE], timeVals[MONTH], timeVals[YEAR], days[timeVals[DAY]]);
+    sprintf(outStr, "%02d/%02d/%04d %s", timeVals[MONTH], timeVals[DATE], timeVals[YEAR], days[timeVals[DAYOFWEEK]]);
     tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     if(setIdx < 4)
     {
       textPosition[1] += fontHeight;
-      sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "dd" : "  "), (setIdx == 1 ? "mm" : "  "), (setIdx == 2 ? "yyyy" : "    "), (setIdx == 3 ? "ww" : "  "));
+      sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "mm" : "  "), (setIdx == 1 ? "dd" : "  "), (setIdx == 2 ? "yyyy" : "    "), (setIdx == 3 ? "ww" : "  "));
       tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
     }
     textPosition[1] += fontHeight;
-    sprintf(outStr, "%02d:%02d %s", timeVals[HOUR], timeVals[MINUTE], (isPM ? "PM" : "AM"));
+    if(deviceSettings.is12Hour)
+    {
+      sprintf(outStr, "%02d:%02d %s", timeVals[HOUR], timeVals[MINUTE], (isPM ? "PM" : "AM"));
+    }
+    else
+    {
+      sprintf(outStr, "%02d:%02d %s", timeVals[HOUR], timeVals[MINUTE], " (24H)");
+    }
     tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
     if(setIdx > 3)
     {
       textPosition[1] += fontHeight;
-      sprintf(outStr, "%s %s %s", (setIdx == 4 ? "hh" : "  "), (setIdx == 5 ? "mm" : "  "), (setIdx == 6 ? "ap" : "  "));
+      if(deviceSettings.is12Hour)
+      {
+        sprintf(outStr, "%s %s %s", (setIdx == 4 ? "hh" : "  "), (setIdx == 5 ? "mm" : "  "), (setIdx == 6 ? "ap" : "  "));
+      }
+      else
+      {
+        sprintf(outStr, "%s %s %s", (setIdx == 4 ? "hh" : "  "), (setIdx == 5 ? "mm" : "  "));
+      }
       tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
     }
     
@@ -2414,18 +2478,7 @@ void SetDateTime()
       }
       switch (setIdx)
       {
-        case 0:  // date
-          timeVals[DATE] += delta;
-          if(timeVals[DATE] <= 0)
-          {
-            timeVals[DATE] = 31;
-          }
-          if(timeVals[DATE] > 31)
-          {
-            timeVals[DATE] = 1;
-          }
-          break;
-        case 1:  // month
+        case 0:  // month
           timeVals[MONTH] += delta;
           if(timeVals[MONTH] <= 0)
           {
@@ -2436,26 +2489,29 @@ void SetDateTime()
             timeVals[MONTH] = 1;
           }
           break;
+        case 1:  // date
+          timeVals[DATE] += delta;
+          if(timeVals[DATE] <= 0)
+          {
+            timeVals[DATE] = 31;
+          }
+          if(timeVals[DATE] > 31)
+          {
+            timeVals[DATE] = 1;
+          }
+          break;
         case 2:  // year
-          //if(timeVals[YEAR] < 2020)
-          //{
-          //  timeVals[YEAR] = 2020;
-          //}
-          //if(timeVals[YEAR] > 2100)
-          //{
-          //  timeVals[YEAR] = 2020;
-          //}
           timeVals[YEAR] += delta;
           break;
-        case 3:  // day
-          timeVals[DAY] += delta;
-          if(timeVals[DAY] < 0)
+        case 3:  // day of week
+          timeVals[DAYOFWEEK] += delta;
+          if(timeVals[DAYOFWEEK] < 0)
           {
-            timeVals[DAY] = 6;
+            timeVals[DAYOFWEEK] = 6;
           }
-          if(timeVals[DAY] > 6)
+          if(timeVals[DAYOFWEEK] > 6)
           {
-            timeVals[DAY] = 0;
+            timeVals[DAYOFWEEK] = 0;
           }
           break;
         case 4:  // hour
@@ -2503,7 +2559,8 @@ void SetDateTime()
       }
       break;
     }
-    if(setIdx > 6)
+    if((deviceSettings.is12Hour && (setIdx > 6)) ||
+       (setIdx > 5))
     {
       break;
     }
@@ -2521,15 +2578,19 @@ void SetDateTime()
   Serial.print("/");
   Serial.print(timeVals[MONTH]);
   Serial.print("/");
-  Serial.print(timeVals[DAY]);
+  Serial.print(timeVals[DATE]);
   Serial.print("\t");
   Serial.print(timeVals[HOUR]);
   Serial.print(":");
   Serial.print(timeVals[MINUTE]);
   Serial.print(":");
   Serial.println(timeVals[SECOND]);
+  if((deviceSettings.is12Hour) && isPM && (timeVals[HOUR] < 12))
+  {
+    timeVals[HOUR] += 12;
+  }
 
-  rtc.adjust(DateTime(timeVals[YEAR], timeVals[MONTH], timeVals[DAY], timeVals[HOUR],timeVals[MINUTE],timeVals[SECOND]));
+  rtc.adjust(DateTime(timeVals[YEAR], timeVals[MONTH], timeVals[DATE], timeVals[HOUR],timeVals[MINUTE],timeVals[SECOND]));
   textPosition[1] += fontHeight * 2;
   tftDisplay.drawString(GetStringTime(), textPosition[0], textPosition[1], GFXFF);
   delay(5000);
