@@ -102,6 +102,7 @@ void handleNotFound(AsyncWebServerRequest *request);
 void onServoInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
 String GetStringTime();
 String GetStringDate();
+bool IsPM();
 void CheckButtons(unsigned long curTime);
 void YamuraBanner();
 void SetFont(int fontSize);
@@ -2260,6 +2261,12 @@ void onServoInputWebSocketEvent(AsyncWebSocket *server,
       break;  
   }
 }
+bool IsPM()
+{
+  DateTime now;
+  now = rtc.now();
+  return now.isPM();
+}
 //
 //
 //
@@ -2289,14 +2296,6 @@ String GetStringTime()
         hour -= 12;
       }
     } 
-    else
-    {
-      Serial.print("am");
-    }
-  }
-  else
-  {
-      Serial.print("(24h)");
   }
 
   Serial.print("Time: ");
@@ -2369,7 +2368,6 @@ void SetDateTime()
 {
   char outStr[256];
   int timeVals[8] = {0, 0, 0, 0, 0, 0, 0, 0};  // date, month, year, day, hour, min, sec, 100ths
-  bool isPM = false;
   // location of text
   int textPosition[2] = {5, 0};
   int setIdx = 0;
@@ -2382,13 +2380,13 @@ void SetDateTime()
   delay(5000);
   return;
   #endif
-
   DateTime now;
   now = rtc.now();
   int year = now.year();
   int month = now.month();
   int day = now.day();
   int dayOfWeek = now.dayOfTheWeek();
+  bool isPM = now.isPM();
 
   timeVals[DATE] = now.day();
   timeVals[MONTH] = now.month();
@@ -2410,6 +2408,9 @@ void SetDateTime()
     textPosition[1] = 0;
     tftDisplay.fillScreen(TFT_BLACK);
     YamuraBanner();
+    SetFont(24);
+    tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  
     tftDisplay.drawString("Set date/time", textPosition[0], textPosition[1], GFXFF);
     
     textPosition[1] += fontHeight;
@@ -2518,22 +2519,22 @@ void SetDateTime()
           timeVals[HOUR] += delta;
           if(deviceSettings.is12Hour)
           {
-            if(timeVals[HOUR] < 0)
+            if(timeVals[HOUR] <= 0) // going back from 1 to 12
             {
               timeVals[HOUR] = 12;
             }
-            if(timeVals[HOUR] > 12)
+            if(timeVals[HOUR] > 12) // going forward from 12 to 1
             {
               timeVals[HOUR] = 1;
             }
           }
           else
           {
-            if(timeVals[HOUR] < 0)
+            if(timeVals[HOUR] < 0)  // going back from 0 to 23 (12am to 11 pm)
             {
               timeVals[HOUR] = 23;
             }
-            if(timeVals[HOUR] > 23)
+            if(timeVals[HOUR] > 23) // going forward from 11pm to 12am
             {
               timeVals[HOUR] = 0;
             }
@@ -2585,7 +2586,7 @@ void SetDateTime()
   Serial.print(timeVals[MINUTE]);
   Serial.print(":");
   Serial.println(timeVals[SECOND]);
-  if((deviceSettings.is12Hour) && isPM && (timeVals[HOUR] < 12))
+  if((deviceSettings.is12Hour) && isPM && (timeVals[HOUR] < 12)) // convert to 24 hour clock for RTC module 
   {
     timeVals[HOUR] += 12;
   }
@@ -2593,6 +2594,7 @@ void SetDateTime()
   rtc.adjust(DateTime(timeVals[YEAR], timeVals[MONTH], timeVals[DATE], timeVals[HOUR],timeVals[MINUTE],timeVals[SECOND]));
   textPosition[1] += fontHeight * 2;
   tftDisplay.drawString(GetStringTime(), textPosition[0], textPosition[1], GFXFF);
+  SetFont(deviceSettings.fontPoints);
   delay(5000);
 }
 //
