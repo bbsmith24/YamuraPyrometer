@@ -667,7 +667,7 @@ void InstantTemp()
       instant_temp = tempSensor.getThermocoupleTemp();
       if(deviceSettings.tempUnits == 0)
       {
-        instant_temp = CtoFAbsolute(instant_temp)
+        instant_temp = CtoFAbsolute(instant_temp);
       }
       #else
       instant_temp = 100.0F;
@@ -2378,21 +2378,6 @@ String GetStringTime()
         hour -= 12;
       }
     } 
-  }
-  if(deviceSettings.is12Hour)
-  {
-    if(isPM)
-    {
-      Serial.print("pm");
-    } 
-    else
-    {
-      Serial.print("am");
-    }
-  }
-  else
-  {
-      Serial.print("(24h)");
   }
   if(deviceSettings.is12Hour)
   {
