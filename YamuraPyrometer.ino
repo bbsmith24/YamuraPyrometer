@@ -665,15 +665,9 @@ void InstantTemp()
       #ifdef HAS_THERMO
       //instant_temp = tempSensor.readTempC();//tempSensor.getThermocoupleTemp(deviceSettings.tempUnits); // false for F, true or empty for C
       instant_temp = tempSensor.getThermocoupleTemp();
-      Serial.print("Instant temp\t");
-      Serial.print(instant_temp);
-      Serial.print("C\t");
-      //Serial.print(CtoFAbsolute(instant_temp));
-      Serial.print((instant_temp * 1.8) + 32);
-      Serial.println("F");
-      if(!deviceSettings.tempUnits)
+      if(deviceSettings.tempUnits == 0)
       {
-        instant_temp = (instant_temp * 1.8) + 32;//CtoFAbsolute(instant_temp);
+        instant_temp = CtoFAbsolute(instant_temp)
       }
       #else
       instant_temp = 100.0F;
@@ -2385,13 +2379,6 @@ String GetStringTime()
       }
     } 
   }
-
-  Serial.print("Time: ");
-  Serial.print(hour);
-  Serial.print(":");
-  Serial.print(minute);
-  Serial.print(":");
-  Serial.print(second);
   if(deviceSettings.is12Hour)
   {
     if(isPM)
@@ -2407,16 +2394,6 @@ String GetStringTime()
   {
       Serial.print("(24h)");
   }
-  Serial.print("\tDate ");
-  Serial.print(month);
-  Serial.print("/");
-  Serial.print(day);
-  Serial.print("/");
-  Serial.print(year);
-  Serial.print(" (");
-  Serial.print(dayOfWeek);
-  Serial.println(")");
-
   if(deviceSettings.is12Hour)
   {
     sprintf(buf, "%02d:%02d%s", hour, minute, ampmStr[isPM ? 1 : 0]);
