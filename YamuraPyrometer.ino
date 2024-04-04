@@ -34,7 +34,9 @@
 #include "FS.h"
 #include "SD.h"
 #include "SPI.h"
-#include <SparkFun_MCP9600.h>    // thermocouple amplifier
+//#include <SparkFunMAX31855k.h> // https://github.com/sparkfun/MAX31855K_Thermocouple_Breakout
+//#include "Adafruit_MAX31855.h" //  https://www.adafruit.com/products/269
+#include <SparkFun_MCP9600.h>
 #include "RTClib.h"   // PCF8563 RTC library https://github.com/adafruit/RTClib
 
 // car info structure
@@ -85,8 +87,6 @@ void RotateDisplay(bool rotateButtons);
 void SetUnits();
 void SetDateTime();
 void DeleteDataFile(bool verify = true);
-bool CheckTempStable(float curTemp);
-void ResetTempStable();
 void ReadCarSetupFile(fs::FS &fs, const char * path);
 void WriteCarSetupFile(fs::FS &fs, const char * path);
 void ReadDeviceSetupFile(fs::FS &fs, const char * path);
@@ -106,6 +106,12 @@ bool IsPM();
 void CheckButtons(unsigned long curTime);
 void YamuraBanner();
 void SetFont(int fontSize);
+float CtoFAbsolute(float tempC);
+float CtoFRelative(float tempC);
+float GetStableTemp(int row, int col);
+void PrintTemp(float temp);
+//void ResetTempStable();
+//bool CheckTempStable(float curTemp);
 
 // uncomment for debug to serial monitor (use #ifdef...#endif around debug output prints)
 //#define DEBUG_VERBOSE
@@ -113,9 +119,12 @@ void SetFont(int fontSize);
 //#define DEBUG_HTML
 //#define SET_TO_SYSTEM_TIME
 // microSD chip select, I2C pins
-#define sd_CS 5
+#define SD_CS 5
 #define I2C_SDA 21
 #define I2C_SCL 22
+#define THERMO_CS   25
+#define THERMO_DO   19
+#define THERMO_CLK  23
 // uncomment for RTC module attached
 #define HAS_RTC
 // uncomment for thermocouple module attached (use random values for test if not attached)
@@ -193,7 +202,13 @@ float currentTemps[18];
 
 // devices
 // thermocouple amplifier
+//SparkFunMAX31855k tempSensor(THERMO_CS);
+//Adafruit_MAX31855 tempSensor(THERMO_CLK, THERMO_CS, THERMO_DO);
 MCP9600 tempSensor;
+
+#define TEMP_BUFFER 15
+float tempValues[100];
+
 // rtc
 RTC_PCF8563 rtc;
 
@@ -210,7 +225,7 @@ int fontHeight;
 int tempIdx = 0;
 float tempStableRecent[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 float tempStableMinMax[2] = {150.0, -150.0};
-bool tempStable = false;
+//bool tempStable = false;
 
 int carCount = 0;
 int selectedCar = 0;
@@ -273,85 +288,60 @@ void setup()
   Wire.setClock(100000);
   delay(5000);
 
+#ifdef HAS_THERMO
+  //while (isnan(tempSensor.readTempC())) 
+//check if the sensor is connected
   tempSensor.begin();       // Uses the default address (0x60) for SparkFun Thermocouple Amplifier
-  //else 
-  while(!tempSensor.isConnected())
-  {
-    tftDisplay.drawString("Thermocouple FAIL", textPosition[0], textPosition[1], GFXFF);
-    delay(5000);
+  if(tempSensor.isConnected()){
+    Serial.println("Device will acknowledge!");
   }
-  //check if the sensor is connected
-  tftDisplay.drawString("Thermocouple OK", textPosition[0], textPosition[1], GFXFF);
-  textPosition[1] += fontHeight;
-  delay(1000);
+  else {
+    Serial.println("Device did not acknowledge! Freezing.");
+    while(1); //hang forever
+  }
+
   //check if the Device ID is correct
-  if(!tempSensor.checkDeviceID())
+  if(tempSensor.checkDeviceID()){
+      Serial.println("Device ID is correct!");        
+  }
+  else 
   {
+    Serial.println("Device ID is not correct! Freezing.");
     while(1);
   }
-  //change the thermocouple type being used
-  switch(tempSensor.getThermocoupleType())
+
+  //while (!tempSensor.begin())
+  //{
+  //  tftDisplay.drawString("Thermocouple error", textPosition[0], textPosition[1], GFXFF);
+  //  uint8_t e = tempSensor.readError();
+  //  if (e & MAX31855_FAULT_OPEN)
+  //  {
+  //     Serial.println("FAULT: Thermocouple is open - no connections.");
+  //     tftDisplay.drawString("Thermocouple is open - no connections", textPosition[0], textPosition[1] + fontHeight, GFXFF);
+  //  }
+  //  if (e & MAX31855_FAULT_SHORT_GND) 
+  //  {
+  //    Serial.println("FAULT: Thermocouple is short-circuited to GND.");
+  //     tftDisplay.drawString("Thermocouple is short-circuited to GND", textPosition[0], textPosition[1] + fontHeight, GFXFF);
+  //  }
+  //  if (e & MAX31855_FAULT_SHORT_VCC)
+  //  {
+  //    Serial.println("FAULT: Thermocouple is short-circuited to VCC.");
+  //     tftDisplay.drawString("Thermocouple is short-circuited to VCC", textPosition[0], textPosition[1] + fontHeight, GFXFF);
+  //  }
+  //  Serial.flush();
+  //  delay(1000);
+  //}
+  Serial.println("Thermocouple OK");
+  tftDisplay.drawString("Thermocouple OK", textPosition[0], textPosition[1], GFXFF);
+#else
+    tftDisplay.drawString("No thermocouple - random test values", textPosition[0], textPosition[1], GFXFF);
+    Serial.println("No thermocouple - random test values");
+#endif
+  textPosition[1] += fontHeight;
+  for(int idx = 0; idx < TEMP_BUFFER; idx++)
   {
-    case 0b000:
-      tftDisplay.drawString("K Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
-      textPosition[1] += fontHeight;
-      break;
-    case 0b001:
-      tftDisplay.drawString("J Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
-      textPosition[1] += fontHeight;
-      break;
-    case 0b010:
-      tftDisplay.drawString("T Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
-      textPosition[1] += fontHeight;
-      break;
-    case 0b011:
-      tftDisplay.drawString("N Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
-      textPosition[1] += fontHeight;
-      break;
-    case 0b100:
-      tftDisplay.drawString("S Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
-      textPosition[1] += fontHeight;
-      break;
-    case 0b101:
-      tftDisplay.drawString("E Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
-      textPosition[1] += fontHeight;
-      break;
-    case 0b110:
-      tftDisplay.drawString("B Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
-      textPosition[1] += fontHeight;
-      break;
-    case 0b111:
-      tftDisplay.drawString("R Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
-      textPosition[1] += fontHeight;
-      break;
-    default:
-      tftDisplay.drawString("Unknown Thermocouple type", textPosition[0], textPosition[1], GFXFF);
-      textPosition[1] += fontHeight;
-      break;
-  }
-  if(tempSensor.getThermocoupleType() != TYPE_K)
-  {
-    tftDisplay.drawString("Setting to K Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
-    textPosition[1] += fontHeight;
-    tempSensor.setThermocoupleType(TYPE_K);
-    //make sure the type was set correctly!
-    if(!tempSensor.getThermocoupleType() == TYPE_K)
-    {
-      tftDisplay.drawString("Failed to set to K Type Thermocouple", textPosition[0], textPosition[1], GFXFF);
-      textPosition[1] += fontHeight;
-    }
-  }
-  switch(tempSensor.getAmbientResolution())
-  {
-    case RES_ZERO_POINT_0625:
-      tempRes = 0.1125;
-      break;
-    case RES_ZERO_POINT_25:
-      tempRes = 0.45;
-      break;
-    default:
-      tempRes = 0.45;
-      break;
+    tempValues[idx] = -100.0;
   }
   #ifdef HAS_RTC
   while (!rtc.begin()) 
@@ -399,7 +389,7 @@ void setup()
     pinMode(buttons[idx].buttonPin, INPUT_PULLUP);
   }
 
-  if(!SD.begin(sd_CS))
+  if(!SD.begin(SD_CS))
   {
     tftDisplay.drawString("microSD card mount failed", textPosition[0], textPosition[1], GFXFF);
     while(true);
@@ -422,7 +412,7 @@ void setup()
   ReadCarSetupFile(SD,  "/py_cars.txt");
   ReadDeviceSetupFile(SD,  "/py_setup.txt");
 
-  ResetTempStable();
+  //ResetTempStable();
 
   #ifdef HAS_RTC
   // get time from RTC
@@ -558,100 +548,72 @@ int MeasureTireTemps(int tireIdx)
   {
     tireTemps[(tireIdx * cars[selectedCar].positionCount) + idx] = 0.0;
   }
-  ResetTempStable();
+  //ResetTempStable();
   armed = false;
   unsigned long priorTime = millis();
   unsigned long curTime = millis();
   // text position on OLED screen
   // measuring until all positions are measured
-  while(true)
+  bool drawStars = true;
+  while(measIdx < cars[selectedCar].positionCount)
   {
+    if(drawStars)
+    {
+      row = ((tireIdx / 2) * 2) + 1;
+      col = measIdx + ((tireIdx % 2) * 3);
+      DrawCellText(row, 
+                   col, 
+                   "****", 
+                   TFT_WHITE, 
+                   TFT_BLACK);
+      drawStars = false;
+    }
     // get time and process buttons for press/release
     curTime = millis();
     CheckButtons(curTime);
-    // button 1 release arms probe
+    // button 0 release arms probe
     // prior to arm, display ****, after display temp as it stabilizes
     if (buttons[0].buttonReleased)
     {
       armed = true;
       buttons[0].buttonReleased = false;
     }
-    // only before measure starts, back/forward button returns without starting measurement
-    for(int btnIdx = 1; btnIdx < BUTTON_COUNT; btnIdx++)
+    // check for button 1 or 2 release (tire selection) before measure starts
+    else if (((buttons[1].buttonReleased) || (buttons[2].buttonReleased))  && (measIdx == 0))
     {
-      if ((buttons[btnIdx].buttonReleased) && (measIdx == 0) && (!armed))
+      // erase stars in first measure position
+      DrawCellText(row, 
+                   col, 
+                   "****", 
+                   TFT_BLACK,
+                   TFT_BLACK);
+
+      int rVal = buttons[1].buttonReleased == true ? 1 : -1;
+      for(int btnIdx = 1; btnIdx < BUTTON_COUNT; btnIdx++)
       {
-        row = ((tireIdx / 2) * 2) + 1;
-        col = measIdx + ((tireIdx % 2) * 3);
-        DrawCellText(row, 
-                     col, 
-                     "****", 
-                     TFT_BLACK, 
-                     TFT_BLACK);
         buttons[btnIdx].buttonReleased = false;
-        if(btnIdx == 1)
-        {
-          return 1;
-        }
-        else
-        {
-          return -1;
-        }
       }
+      return rVal;
     }
-    // check for stable temp and armed
-    if(tempStable)
+    // if not armed continue
+    if(!armed)// && (curTime - priorTime) < 250)
     {
-      // armed, save the temp and go to next position
-      if(armed)
-      {
-        measIdx++;
-        // done measuring
-        if(measIdx == cars[selectedCar].positionCount)
-        {
-          measIdx = 0;
-          break;
-        }
-        tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 0;
-        ResetTempStable();
-        armed = false;
-      }
-    }
-    // if not stablized. sample temp every .250 second, check for stable temp
-    if(!tempStable && (curTime - priorTime) > 250)
-    {
-      priorTime = curTime;
       curTime = millis();
-      // read temp, check for stable temp, light LED if stable
-      if(armed)
-      {
-        #ifdef HAS_THERMO
-        tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = tempSensor.getThermocoupleTemp(deviceSettings.tempUnits); // false for F, true or empty for C
-        #else
-        tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 100;
-        #endif
-        tempStable = CheckTempStable(tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx]);
-      }
-      for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
-      {
-        sprintf(outStr, " ");
-        if((tirePosIdx == measIdx) && (!armed))
-        {
-          sprintf(outStr, "****");
-        }
-        if(tireTemps[(tireIdx * cars[selectedCar].positionCount) + tirePosIdx] > 0.0)
-        {
-          sprintf(outStr, "%3.1F", tireTemps[(cars[selectedCar].positionCount * tireIdx) + tirePosIdx]);
-        }
-        row = ((tireIdx / 2) * 2) + 1;
-        col = tirePosIdx + ((tireIdx % 2) * 3);
-        DrawCellText(row, 
-                     col, 
-                     outStr, 
-                     TFT_WHITE, 
-                     TFT_BLACK);
-      }
+      continue;
     }
+    // get stable temp after arming
+    row = ((tireIdx / 2) * 2) + 1;
+    col = measIdx + ((tireIdx % 2) * 3);
+    #ifdef HAS_THERMO
+    tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = GetStableTemp(row, col);
+    #else
+    tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 100;
+    #endif
+    // disarm after stable temp
+    armed = false;
+    // next position
+    measIdx++;
+    drawStars = true;
   }
   return 1;
 }
@@ -701,7 +663,18 @@ void InstantTemp()
       priorTime = curTime;
       // read temp
       #ifdef HAS_THERMO
-      instant_temp = tempSensor.getThermocoupleTemp(deviceSettings.tempUnits); // false for F, true or empty for C
+      //instant_temp = tempSensor.readTempC();//tempSensor.getThermocoupleTemp(deviceSettings.tempUnits); // false for F, true or empty for C
+      instant_temp = tempSensor.getThermocoupleTemp();
+      Serial.print("Instant temp\t");
+      Serial.print(instant_temp);
+      Serial.print("C\t");
+      //Serial.print(CtoFAbsolute(instant_temp));
+      Serial.print((instant_temp * 1.8) + 32);
+      Serial.println("F");
+      if(!deviceSettings.tempUnits)
+      {
+        instant_temp = (instant_temp * 1.8) + 32;//CtoFAbsolute(instant_temp);
+      }
       #else
       instant_temp = 100.0F;
       #endif
@@ -1559,38 +1532,153 @@ void DeleteDataFile(bool verify)
 //
 //
 //
-bool CheckTempStable(float curTemp)
+float CtoFAbsolute(float tempC)
 {
-  tempStableRecent[tempIdx] = curTemp;
+  return (tempC * 1.8) + 32; 
+}
+//
+//
+//
+float CtoFRelative(float tempC)
+{
+  return (tempC * 1.8); 
+}
+//
+//
+//
+void PrintTemp(float temp)
+{
+  if(temp >= 0.0)
+  {
+    Serial.print(" ");
+    if(temp > -100.0)
+    {
+      Serial.print(" ");
+    }
+    if(temp > -10.0)
+    {
+      Serial.print(" ");
+    }
 
-  tempStableMinMax[0] = 150;
-  tempStableMinMax[1] = -150;
-  for(int cnt = 0; cnt < 10; cnt++)
-  {
-    tempStableMinMax[0] = tempStableRecent[cnt] < tempStableMinMax[0] ? tempStableRecent[cnt] : tempStableMinMax[0];
-    tempStableMinMax[1] = tempStableRecent[cnt] > tempStableMinMax[1] ? tempStableRecent[cnt] : tempStableMinMax[1];
   }
-  tempIdx = tempIdx + 1 >= 10 ? 0 : tempIdx + 1;
- if(((tempStableMinMax[1] - tempStableMinMax[0]) <= 0.5))
+  else
   {
-    return true;
+    if(temp < 100.0)
+    {
+      Serial.print(" ");
+    }
+    if(temp < 10.0)
+    {
+      Serial.print(" ");
+    }
   }
-  return false;
+  Serial.print(temp);
 }
 //
 //
 //
-void ResetTempStable()
+float GetStableTemp(int row, int col)
 {
-  // set min/max values, fill temp array
-  tempStableMinMax[0] = 200.0F;
-  tempStableMinMax[1] = -200.0F;
-  for(int cnt = 0; cnt < 10; cnt++)
+  char outStr[512];
+  float minMax[2] = {5000.0, -5000.0};
+  float devRange[2] = {-0.25, 0.25};
+  float averageTemp = 0;
+  bool rVal = true;
+  float temperature;
+  int countTemperature = 0;
+  // convert deviation band to F if needed
+  if(deviceSettings.tempUnits == 0)
   {
-    tempStableRecent[cnt] = 0.0;
+    for(int idx = 0; idx < 2; idx++)
+    {
+      devRange[idx] = CtoFRelative(devRange[idx]);
+    }
   }
-  tempStable = false;
+
+  for(int idx = 0; idx < TEMP_BUFFER; idx++)
+  {
+    tempValues[idx] = -100.0;
+  }
+  while(true)
+  {
+    temperature = tempSensor.getThermocoupleTemp();
+    if (isnan(temperature)) 
+    {
+      return temperature;
+    }
+    // convert to F if required
+    if(deviceSettings.tempUnits == 0)
+    {
+      temperature = CtoFAbsolute(temperature);
+    }
+    // draw current temp in cell
+    sprintf(outStr, "%0.1F", temperature);
+    DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLACK);
+    // get average temp in circular buffer
+    if(countTemperature >= TEMP_BUFFER)
+    {
+      countTemperature = 0;
+    }
+    tempValues[countTemperature] = temperature;
+    countTemperature++;
+    averageTemp = 0.0;
+    for(int idx = 0; idx < TEMP_BUFFER; idx++)
+    {
+      averageTemp += tempValues[idx];
+    }
+    averageTemp = averageTemp / (float)TEMP_BUFFER;
+    // check deviations, exit if within +/- 0.25
+    minMax[0] = 5000.0;  
+    minMax[1] = -5000.0;
+    for(int idx = 0; idx < TEMP_BUFFER; idx++)
+    {
+      minMax[0] = (averageTemp - tempValues[idx]) < minMax[0] ? (averageTemp - tempValues[idx]) : minMax[0];
+      minMax[1] = (averageTemp - tempValues[idx]) > minMax[1] ? (averageTemp - tempValues[idx]) : minMax[1];
+    }
+    if(((minMax[1] - minMax[0]) >= devRange[0]) &&
+       ((minMax[1] - minMax[0]) <=  devRange[1]))
+    {
+      break;
+    }
+    delay(500);
+  }
+  return averageTemp;
 }
+//
+//
+//
+//bool CheckTempStable(float curTemp)
+//{
+//  tempStableRecent[tempIdx] = curTemp;
+//
+//  tempStableMinMax[0] = 150;
+//  tempStableMinMax[1] = -150;
+//  for(int cnt = 0; cnt < 10; cnt++)
+//  {
+//    tempStableMinMax[0] = tempStableRecent[cnt] < tempStableMinMax[0] ? tempStableRecent[cnt] : tempStableMinMax[0];
+//    tempStableMinMax[1] = tempStableRecent[cnt] > tempStableMinMax[1] ? tempStableRecent[cnt] : tempStableMinMax[1];
+//  }
+//  tempIdx = tempIdx + 1 >= 10 ? 0 : tempIdx + 1;
+// if(((tempStableMinMax[1] - tempStableMinMax[0]) <= 0.5))
+//  {
+//    return true;
+//  }
+//  return false;
+//}
+//
+//
+//
+//void ResetTempStable()
+//{
+//  // set min/max values, fill temp array
+//  tempStableMinMax[0] = 200.0F;
+//  tempStableMinMax[1] = -200.0F;
+//  for(int cnt = 0; cnt < 10; cnt++)
+//  {
+//    tempStableRecent[cnt] = 0.0;
+//  }
+//  tempStable = false;
+//}
 //
 //CarSettings
 //
