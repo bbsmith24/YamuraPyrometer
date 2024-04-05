@@ -672,6 +672,7 @@ void InstantTemp()
       #else
       instant_temp = 100.0F;
       #endif
+      sprintf(outStr, "0000.00000");
       tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.textWidth(outStr), fontHeight, TFT_BLACK);
       sprintf(outStr, "%0.2f", instant_temp);
       tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
@@ -1249,7 +1250,7 @@ int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSel
       tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_BLACK);
       if(menuIdx == selection)
       {
-        tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
+        tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
         tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
       }
       else
@@ -1638,41 +1639,6 @@ float GetStableTemp(int row, int col)
   }
   return averageTemp;
 }
-//
-//
-//
-//bool CheckTempStable(float curTemp)
-//{
-//  tempStableRecent[tempIdx] = curTemp;
-//
-//  tempStableMinMax[0] = 150;
-//  tempStableMinMax[1] = -150;
-//  for(int cnt = 0; cnt < 10; cnt++)
-//  {
-//    tempStableMinMax[0] = tempStableRecent[cnt] < tempStableMinMax[0] ? tempStableRecent[cnt] : tempStableMinMax[0];
-//    tempStableMinMax[1] = tempStableRecent[cnt] > tempStableMinMax[1] ? tempStableRecent[cnt] : tempStableMinMax[1];
-//  }
-//  tempIdx = tempIdx + 1 >= 10 ? 0 : tempIdx + 1;
-// if(((tempStableMinMax[1] - tempStableMinMax[0]) <= 0.5))
-//  {
-//    return true;
-//  }
-//  return false;
-//}
-//
-//
-//
-//void ResetTempStable()
-//{
-//  // set min/max values, fill temp array
-//  tempStableMinMax[0] = 200.0F;
-//  tempStableMinMax[1] = -200.0F;
-//  for(int cnt = 0; cnt < 10; cnt++)
-//  {
-//    tempStableRecent[cnt] = 0.0;
-//  }
-//  tempStable = false;
-//}
 //
 //CarSettings
 //
@@ -2465,38 +2431,118 @@ void SetDateTime()
     
     textPosition[1] += fontHeight;
 
-    sprintf(outStr, "%02d/%02d/%04d %s", timeVals[MONTH], timeVals[DATE], timeVals[YEAR], days[timeVals[DAYOFWEEK]]);
-    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
-    if(setIdx < 4)
+    sprintf(outStr, "%02d", timeVals[MONTH]);
+    if(setIdx == 0)
     {
-      textPosition[1] += fontHeight;
-      sprintf(outStr, "%s %s %s %s", (setIdx == 0 ? "mm" : "  "), (setIdx == 1 ? "dd" : "  "), (setIdx == 2 ? "yyyy" : "    "), (setIdx == 3 ? "ww" : "  "));
-      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
-    }
-    textPosition[1] += fontHeight;
-    if(deviceSettings.is12Hour)
-    {
-      sprintf(outStr, "%02d:%02d %s", timeVals[HOUR], timeVals[MINUTE], (isPM ? "PM" : "AM"));
+      tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
     }
     else
     {
-      sprintf(outStr, "%02d:%02d %s", timeVals[HOUR], timeVals[MINUTE], " (24H)");
+      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
     }
-    tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
-    if(setIdx > 3)
+    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
+    textPosition[0] += tftDisplay.textWidth(outStr);
+
+    sprintf(outStr, "/");
+    tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
+    textPosition[0] += tftDisplay.textWidth(outStr);
+
+    sprintf(outStr, "%02d", timeVals[DATE]);
+    if(setIdx == 1)
     {
-      textPosition[1] += fontHeight;
-      if(deviceSettings.is12Hour)
+      tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
+    }
+    else
+    {
+      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    }
+    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
+    textPosition[0] += tftDisplay.textWidth(outStr);
+
+    sprintf(outStr, "/");
+    tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
+    textPosition[0] += tftDisplay.textWidth(outStr);
+
+    sprintf(outStr, "%02d", timeVals[YEAR]);
+    if(setIdx == 2)
+    {
+      tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
+    }
+    else
+    {
+      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    }
+    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
+    textPosition[0] += tftDisplay.textWidth(outStr);
+
+    sprintf(outStr, " %s", days[timeVals[DAYOFWEEK]]);
+    if(setIdx == 3)
+    {
+      tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
+    }
+    else
+    {
+      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    }
+    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
+
+    textPosition[0] = 5;
+    textPosition[1] += fontHeight;
+
+    sprintf(outStr, "%02d", timeVals[HOUR]);
+    if(setIdx == 4)
+    {
+      tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
+    }
+    else
+    {
+      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    }
+    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
+    textPosition[0] += tftDisplay.textWidth(outStr);
+
+    sprintf(outStr, ":");
+    tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
+    textPosition[0] += tftDisplay.textWidth(outStr);
+
+    sprintf(outStr, "%02d", timeVals[MINUTE]);
+    if(setIdx == 5)
+    {
+      tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
+    }
+    else
+    {
+      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    }
+    tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
+    textPosition[0] += tftDisplay.textWidth(outStr);
+
+    if(deviceSettings.is12Hour)
+    {
+      sprintf(outStr, "%s", (isPM ? " PM" : " AM"));
+      if(setIdx == 6)
       {
-        sprintf(outStr, "%s %s %s", (setIdx == 4 ? "hh" : "  "), (setIdx == 5 ? "mm" : "  "), (setIdx == 6 ? "ap" : "  "));
+        tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
       }
       else
       {
-        sprintf(outStr, "%s %s %s", (setIdx == 4 ? "hh" : "  "), (setIdx == 5 ? "mm" : "  "));
+        tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
       }
-      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+      tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     }
-    
+
+    textPosition[0] = 5;
+    textPosition[1] += fontHeight;
+
+    if((deviceSettings.is12Hour &&  (setIdx >= 7)) ||
+       (!deviceSettings.is12Hour && (setIdx >= 6)))
+    {
+      break;
+    }
+
     while(!buttons[0].buttonReleased)
     {
       curTime = millis();
@@ -2506,10 +2552,6 @@ void SetDateTime()
       {
         buttons[0].buttonReleased = false;
         setIdx++;
-        if(setIdx > 6)
-        {
-          break;
-        }
       }
       // increase/decrease
       else if(buttons[1].buttonReleased)
@@ -2610,32 +2652,7 @@ void SetDateTime()
       }
       break;
     }
-    if((deviceSettings.is12Hour && (setIdx > 6)) ||
-       (setIdx > 5))
-    {
-      break;
-    }
   }
-  //if(isPM)
-  //{
-  //  if (timeVals[HOUR] < 12)
-  //  {
-  //    timeVals[HOUR] += 12;
-  //  }
-  //}
-
-  Serial.print("Set date/time to ");
-  Serial.print(timeVals[YEAR]);
-  Serial.print("/");
-  Serial.print(timeVals[MONTH]);
-  Serial.print("/");
-  Serial.print(timeVals[DATE]);
-  Serial.print("\t");
-  Serial.print(timeVals[HOUR]);
-  Serial.print(":");
-  Serial.print(timeVals[MINUTE]);
-  Serial.print(":");
-  Serial.println(timeVals[SECOND]);
   if((deviceSettings.is12Hour) && isPM && (timeVals[HOUR] < 12)) // convert to 24 hour clock for RTC module 
   {
     timeVals[HOUR] += 12;
@@ -2643,7 +2660,9 @@ void SetDateTime()
 
   rtc.adjust(DateTime(timeVals[YEAR], timeVals[MONTH], timeVals[DATE], timeVals[HOUR],timeVals[MINUTE],timeVals[SECOND]));
   textPosition[1] += fontHeight * 2;
-  tftDisplay.drawString(GetStringTime(), textPosition[0], textPosition[1], GFXFF);
+  sprintf(outStr,"Set to %s %s", GetStringTime(), GetStringDate());
+  tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   SetFont(deviceSettings.fontPoints);
   delay(5000);
 }
