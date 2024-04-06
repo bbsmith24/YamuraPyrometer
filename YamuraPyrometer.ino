@@ -33,11 +33,9 @@
 #include "Free_Fonts.h"          // Include the header file attached to this sketch
 #include "FS.h"
 #include "SD.h"
-#include "SPI.h"
-//#include <SparkFunMAX31855k.h> // https://github.com/sparkfun/MAX31855K_Thermocouple_Breakout
-//#include "Adafruit_MAX31855.h" //  https://www.adafruit.com/products/269
-#include <SparkFun_MCP9600.h>
-#include "RTClib.h"   // PCF8563 RTC library https://github.com/adafruit/RTClib
+#include "SPI.h" 
+#include <SparkFun_MCP9600.h>    // https://github.com/sparkfun/SparkFun_MCP9600_Arduino_Library
+#include "RTClib.h"              // PCF8563 RTC library https://github.com/adafruit/RTClib
 
 // car info structure
 struct CarSettings
@@ -110,8 +108,6 @@ float CtoFAbsolute(float tempC);
 float CtoFRelative(float tempC);
 float GetStableTemp(int row, int col);
 void PrintTemp(float temp);
-//void ResetTempStable();
-//bool CheckTempStable(float curTemp);
 
 // uncomment for debug to serial monitor (use #ifdef...#endif around debug output prints)
 //#define DEBUG_VERBOSE
@@ -202,8 +198,6 @@ float currentTemps[18];
 
 // devices
 // thermocouple amplifier
-//SparkFunMAX31855k tempSensor(THERMO_CS);
-//Adafruit_MAX31855 tempSensor(THERMO_CLK, THERMO_CS, THERMO_DO);
 MCP9600 tempSensor;
 
 #define TEMP_BUFFER 15
@@ -221,11 +215,6 @@ String ampmStr[3] = {"am", "pm", "\0"};
 // TFT display
 TFT_eSPI tftDisplay = TFT_eSPI();
 int fontHeight;
-
-int tempIdx = 0;
-float tempStableRecent[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-float tempStableMinMax[2] = {150.0, -150.0};
-//bool tempStable = false;
 
 int carCount = 0;
 int selectedCar = 0;
@@ -289,51 +278,52 @@ void setup()
   delay(5000);
 
 #ifdef HAS_THERMO
-  //while (isnan(tempSensor.readTempC())) 
-//check if the sensor is connected
   tempSensor.begin();       // Uses the default address (0x60) for SparkFun Thermocouple Amplifier
-  if(tempSensor.isConnected()){
-    Serial.println("Device will acknowledge!");
-  }
-  else {
-    Serial.println("Device did not acknowledge! Freezing.");
-    while(1); //hang forever
-  }
-
-  //check if the Device ID is correct
-  if(tempSensor.checkDeviceID()){
-      Serial.println("Device ID is correct!");        
+  if(tempSensor.isConnected())
+  {
+    Serial.println("Thermocouple will acknowledge!");
   }
   else 
   {
-    Serial.println("Device ID is not correct! Freezing.");
-    while(1);
+    Serial.println("Thermocouple did not acknowledge! Freezing.");
+    while(1); //hang forever
   }
-
-  //while (!tempSensor.begin())
-  //{
-  //  tftDisplay.drawString("Thermocouple error", textPosition[0], textPosition[1], GFXFF);
-  //  uint8_t e = tempSensor.readError();
-  //  if (e & MAX31855_FAULT_OPEN)
-  //  {
-  //     Serial.println("FAULT: Thermocouple is open - no connections.");
-  //     tftDisplay.drawString("Thermocouple is open - no connections", textPosition[0], textPosition[1] + fontHeight, GFXFF);
-  //  }
-  //  if (e & MAX31855_FAULT_SHORT_GND) 
-  //  {
-  //    Serial.println("FAULT: Thermocouple is short-circuited to GND.");
-  //     tftDisplay.drawString("Thermocouple is short-circuited to GND", textPosition[0], textPosition[1] + fontHeight, GFXFF);
-  //  }
-  //  if (e & MAX31855_FAULT_SHORT_VCC)
-  //  {
-  //    Serial.println("FAULT: Thermocouple is short-circuited to VCC.");
-  //     tftDisplay.drawString("Thermocouple is short-circuited to VCC", textPosition[0], textPosition[1] + fontHeight, GFXFF);
-  //  }
-  //  Serial.flush();
-  //  delay(1000);
-  //}
-  Serial.println("Thermocouple OK");
-  tftDisplay.drawString("Thermocouple OK", textPosition[0], textPosition[1], GFXFF);
+  //change the thermocouple type being used
+  Serial.println("Setting Thermocouple Type!");
+  tempSensor.setThermocoupleType(TYPE_K);
+   //make sure the type was set correctly!
+  switch(tempSensor.getThermocoupleType())
+  {
+    case TYPE_K:
+      sprintf(outStr,"Thermocouple OK (Type K)");
+      break;
+    case TYPE_J:
+      sprintf(outStr,"Thermocouple set failed (Type J");
+      break;
+    case TYPE_T:
+      sprintf(outStr,"Thermocouple set failed (Type T");
+      break;
+    case TYPE_N:
+      sprintf(outStr,"Thermocouple set failed (Type N");
+      break;
+    case TYPE_S:
+      sprintf(outStr,"Thermocouple set failed (Type S");
+      break;
+    case TYPE_E:
+      sprintf(outStr,"Thermocouple set failed (Type E");
+      break;
+    case TYPE_B:
+      sprintf(outStr,"Thermocouple set failed (Type B");
+      break;
+    case TYPE_R:
+      sprintf(outStr,"Thermocouple set failed (Type R");
+      break;
+    default:
+      sprintf(outStr,"Thermocouple set failed (unknown type");
+      break;
+  }
+  Serial.println(outStr);
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
 #else
     tftDisplay.drawString("No thermocouple - random test values", textPosition[0], textPosition[1], GFXFF);
     Serial.println("No thermocouple - random test values");
