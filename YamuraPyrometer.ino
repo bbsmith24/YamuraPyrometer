@@ -32,6 +32,7 @@
 #include <TFT_eSPI.h>            // https://github.com/Bodmer/TFT_eSPI Graphics and font library for ST7735 driver chip
 #include "Free_Fonts.h"          // Include the header file attached to this sketch
 #include "FS.h"
+#include "LittleFS.h"
 #include "SD.h"
 #include "SPI.h" 
 #include <SparkFun_MCP9600.h>    // https://github.com/sparkfun/SparkFun_MCP9600_Arduino_Library
@@ -40,15 +41,15 @@
 // car info structure
 struct CarSettings
 {
-    String carName;
-    String dateTime;
+    char carName[64];
+    char dateTime[32];
     int tireCount;
-    String* tireShortName;
-    String* tireLongName;
+    char tireShortName[6][16];
+    char tireLongName[6][32];
     int positionCount;
-    String* positionShortName;
-    String* positionLongName;
-    float* maxTemp;
+    char positionShortName[6][16];
+    char positionLongName[3][32];
+    float maxTemp[6];
 };
 struct MenuChoice
 {
@@ -87,6 +88,7 @@ void SetDateTime();
 void DeleteDataFile(bool verify = true);
 void ReadCarSetupFile(fs::FS &fs, const char * path);
 void WriteCarSetupFile(fs::FS &fs, const char * path);
+void WriteCarSetupHTML(fs::FS &fs, const char * path, int carIdx);
 void ReadDeviceSetupFile(fs::FS &fs, const char * path);
 void WriteDeviceSetupFile(fs::FS &fs, const char * path);
 void DisplaySelectedResults(fs::FS &fs, const char * path);
@@ -95,9 +97,9 @@ void ParseResult(char buf[], CarSettings &currentResultCar);
 void ReadLine(File file, char* buf);
 void AppendFile(fs::FS &fs, const char * path, const char * message);
 void DeleteFile(fs::FS &fs, const char * path);
-void handleRoot(AsyncWebServerRequest *request);
-void handleNotFound(AsyncWebServerRequest *request);
-void onServoInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
+//void handleRoot(AsyncWebServerRequest *request);
+//void handleNotFound(AsyncWebServerRequest *request);
+//void onServoInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len);
 String GetStringTime();
 String GetStringDate();
 bool IsPM();
@@ -108,6 +110,7 @@ float CtoFAbsolute(float tempC);
 float CtoFRelative(float tempC);
 float GetStableTemp(int row, int col);
 void PrintTemp(float temp);
+void listDir(fs::FS &fs, const char * dirname, uint8_t levels);
 
 // uncomment for debug to serial monitor (use #ifdef...#endif around debug output prints)
 //#define DEBUG_VERBOSE
@@ -174,6 +177,8 @@ void PrintTemp(float temp);
 #define BUTTON_RELEASED 0
 #define BUTTON_PRESSED  1
 #define BUTTON_DEBOUNCE_DELAY   20   // ms
+#define FORMAT_LITTLEFS_IF_FAILED true
+
 // button debounce structure
 struct UserButton
 {
@@ -218,6 +223,7 @@ int fontHeight;
 
 int carCount = 0;
 int selectedCar = 0;
+int carSetupIdx = 0;
 int tireIdx = 0;
 int measIdx = 0;
 float tempRes = 1.0;
@@ -225,8 +231,8 @@ int deviceState = 0;
 
 IPAddress IP;
 AsyncWebServer server(80);
-AsyncWebSocket wsServoInput("/ServoInput");
-String htmlStr;
+//AsyncWebSocket wsServoInput("/ServoInput");
+//String htmlStr;
 
 //
 // grid lines for temp measure/display
@@ -251,6 +257,7 @@ void setup()
   //buttons[3].buttonPin = 27;
   // set up tft display
   tftDisplay.init();
+  tftDisplay.invertDisplay(true);
   RotateDisplay(false);  
   int w = tftDisplay.width();
   int h = tftDisplay.height();
@@ -281,15 +288,23 @@ void setup()
   tempSensor.begin();       // Uses the default address (0x60) for SparkFun Thermocouple Amplifier
   if(tempSensor.isConnected())
   {
+    #ifdef DEBUG_VERBOSE
     Serial.println("Thermocouple will acknowledge!");
+    #endif
   }
   else 
   {
+    #ifdef DEBUG_VERBOSE
     Serial.println("Thermocouple did not acknowledge! Freezing.");
+    #endif
+    tftDisplay.drawString("Thermocouple did not acknowledge", textPosition[0], textPosition[1], GFXFF);
+    textPosition[1] += fontHeight;
     while(1); //hang forever
   }
   //change the thermocouple type being used
+  #ifdef DEBUG_VERBOSE
   Serial.println("Setting Thermocouple Type!");
+  #endif
   tempSensor.setThermocoupleType(TYPE_K);
    //make sure the type was set correctly!
   switch(tempSensor.getThermocoupleType())
@@ -322,7 +337,9 @@ void setup()
       sprintf(outStr,"Thermocouple set failed (unknown type");
       break;
   }
+  #ifdef DEBUG_VERBOSE
   Serial.println(outStr);
+  #endif
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
 #else
     tftDisplay.drawString("No thermocouple - random test values", textPosition[0], textPosition[1], GFXFF);
@@ -336,8 +353,11 @@ void setup()
   #ifdef HAS_RTC
   while (!rtc.begin()) 
   {
+    #ifdef DEBUG_VERBOSE
     Serial.println("Couldn't find RTC...retry");
-    Serial.flush();
+    #endif
+    tftDisplay.drawString("Couldn't find RTC", textPosition[0], textPosition[1], GFXFF);
+    textPosition[1] += fontHeight;
     delay(1000);
   }
   #ifdef SET_TO_SYSTEM_TIME
@@ -349,7 +369,9 @@ void setup()
   if (rtc.lostPower()) 
   {
     delay(5000);
+    #ifdef DEBUG_VERBOSE
     Serial.println("RTC is NOT initialized, let's set the time!");
+    #endif
     // When time needs to be set on a new device, or after a power loss, the
     // following line sets the RTC to the date & time this sketch was compiled
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
@@ -362,10 +384,12 @@ void setup()
     // crystal oscillator time to stabilize. If you call adjust() very quickly
     // after the RTC is powered, lostPower() may still return true.
   }
+  #ifdef DEBUG_VERBOSE
   else
   {
     Serial.println("RTC initialized, time already set");
   }
+  #endif
   // When the RTC was stopped and stays connected to the battery, it has
   // to be restarted by clearing the STOP bit. Let's do this to ensure
   // the RTC is running.
@@ -378,13 +402,36 @@ void setup()
   {
     pinMode(buttons[idx].buttonPin, INPUT_PULLUP);
   }
+  
+  #ifdef DEBUG_VERBOSE
+  Serial.println( " initializing LittleFS" );
+  #endif
+  if(!LittleFS.begin(FORMAT_LITTLEFS_IF_FAILED)){
+      #ifdef DEBUG_VERBOSE
+      Serial.println("LittleFS Mount Failed");
+      #endif
+      tftDisplay.drawString("LittleFS Mount Failed", textPosition[0], textPosition[1], GFXFF);
+      textPosition[1] += fontHeight;
+      return;
+  }
+  #ifdef DEBUG_VERBOSE
+  Serial.println( "LittleFS initialized" );
+  Serial.println("Files on LittleFS");
+  listDir(LittleFS, "/", 3);
+  #endif
 
+  #ifdef DEBUG_VERBOSE
+  Serial.println( "initializing microSD" );
+  #endif
   if(!SD.begin(SD_CS))
   {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("microSD card mount failed");
+    #endif
     tftDisplay.drawString("microSD card mount failed", textPosition[0], textPosition[1], GFXFF);
     while(true);
   }
-  tftDisplay.drawString("microSD OK", textPosition[0], textPosition[1], GFXFF);
+  tftDisplay.drawString("microSD initialized", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   uint8_t cardType = SD.cardType();
   if(cardType == CARD_NONE)
@@ -392,17 +439,16 @@ void setup()
     return;
   }
   uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-  // uncomment to write a default setup file
-  // maybe check for setup and write one if needed?
-  #ifdef WRITE_INI
-  DeleteFile(SD, "/py_cars.txt");
-  WriteCarSetupFile(SD, "/py_cars.txt");
-  WriteDeviceSetupFile(SD, "/py_setup.txt");
+  #ifdef DEBUG_VERBOSE
+  Serial.println( "SD initialized" );
+  Serial.println("Files on SD");
+  listDir(SD, "/", 3);
   #endif
+  
   ReadCarSetupFile(SD,  "/py_cars.txt");
-  ReadDeviceSetupFile(SD,  "/py_setup.txt");
-
-  //ResetTempStable();
+  WriteCarSetupHTML(/*SD*/LittleFS, "/py_cars.html", carSetupIdx);
+  ReadDeviceSetupFile(SD,  "/py_set.txt");
+  WriteDeviceSetupHTML(/*SD*/LittleFS, "/py_set.html");
 
   #ifdef HAS_RTC
   // get time from RTC
@@ -415,6 +461,288 @@ void setup()
   WriteResultsHTML();
   WiFi.softAP(deviceSettings.ssid, deviceSettings.pass);
   IP = WiFi.softAPIP();
+  
+    // Web Server Root URL
+  Serial.println("starting webserver");
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("HTTP_GET, send /py_main.html from LittleFS");
+    #endif
+    request->send(/*SD*/LittleFS, "/py_main.html", "text/html");
+  });
+  
+  server.serveStatic("/", /*SD*/LittleFS, "/");
+
+  server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) 
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("HTTP_POST");
+    #endif
+    int params = request->params();
+    int pageSource = 0;
+    CarSettings tempCar;
+    DeviceSettings tempDevice;
+    char valueCheck[32];
+    bool forceContinue = false;
+    for(int i=0; i < params; i++)
+    {
+      forceContinue = false;
+      AsyncWebParameter* p = request->getParam(i);
+      
+      #ifdef DEBUG_VERBOSE
+      Serial.print(i);
+      Serial.print(": >");
+      Serial.print(p->name());
+      Serial.print("< >");
+      Serial.print(p->value().c_str());
+      Serial.println("<");
+      #endif
+      // car settings
+      if (strcmp(p->name().c_str(), "car_id") == 0)
+      {
+        strcpy(tempCar.carName, p->value().c_str());
+        pageSource = 1;
+        continue;
+      }
+      if (strcmp(p->name().c_str(), "tirecount_id") == 0)
+      {
+        tempCar.tireCount = atoi(p->value().c_str());
+        continue;
+      }
+      if (strcmp(p->name().c_str(), "measurecount_id") == 0)
+      {
+        tempCar.positionCount = atoi(p->value().c_str());
+        continue;
+      }
+      for(int tireIdx = 0; tireIdx < 6; tireIdx++)
+      {
+        sprintf(valueCheck, "tire%d_full_id", tireIdx);
+        if (strcmp(p->name().c_str(), valueCheck) == 0)
+        {
+          strcpy(tempCar.tireLongName[tireIdx], p->value().c_str());
+          forceContinue = true;
+          break;
+        }
+        sprintf(valueCheck, "tire%d_short_id", tireIdx);
+        if (strcmp(p->name().c_str(), valueCheck) == 0)
+        {
+          strcpy(tempCar.tireShortName[tireIdx], p->value().c_str());
+          forceContinue = true;
+          break;
+        }
+        sprintf(valueCheck, "tire%d_maxt_id", tireIdx);
+        if (strcmp(p->name().c_str(), valueCheck) == 0)
+        {
+          tempCar.maxTemp[tireIdx] = atof(p->value().c_str());
+          forceContinue = true;
+          break;
+        }
+      }
+      if(forceContinue)
+      {
+        continue;
+      }
+      for(int posIdx = 0; posIdx < 3; posIdx++)
+      {
+        sprintf(valueCheck, "position%d_full_id", posIdx);
+        if (strcmp(p->name().c_str(), valueCheck) == 0)
+        {
+          strcpy(tempCar.positionLongName[posIdx], p->value().c_str());
+          forceContinue = true;
+          break;
+        }
+        sprintf(valueCheck, "position%d_short_id", posIdx);
+        if (strcmp(p->name().c_str(), valueCheck) == 0)
+        {
+          strcpy(tempCar.positionShortName[posIdx], p->value().c_str());
+          forceContinue = true;
+          break;
+        }
+      }
+      if(forceContinue)
+      {
+        continue;
+      }
+      // device settings
+      if (strcmp(p->name().c_str(), "ssid_id") == 0)
+      {
+        strcpy(tempDevice.ssid, p->value().c_str());
+        pageSource = 2;
+        continue;
+      }
+      if (strcmp(p->name().c_str(), "pass_id") == 0)
+      {
+        strcpy(tempDevice.pass, p->value().c_str());
+        continue;
+      }
+      // bool tempUnits = false; // true for C, false for F
+      if (strcmp(p->name().c_str(), "units_id") == 0)
+      {
+        tempDevice.tempUnits = false;
+        if(strcmp(p->value().c_str(), "C") == 0)
+        {
+          Serial.println("C");
+          tempDevice.tempUnits = true;
+        }
+        else
+        {
+          Serial.println("F");
+          tempDevice.tempUnits = false;
+        }
+        continue;
+      }
+      // int screenRotation = 1; // 1 = R, 0 = L
+      if (strcmp(p->name().c_str(), "orientation_id") == 0)
+      {
+        tempDevice.screenRotation = 1;
+        if(strcmp(p->value().c_str(), "L") == 0)
+        {
+          tempDevice.screenRotation = 0;
+        }
+        continue;
+      }
+      // bool is12Hour = true;   // true for 12 hour clock, false for 24 hour clock
+      if (strcmp(p->name().c_str(), "clock_id") == 0)
+      {
+        tempDevice.is12Hour = true;
+        int hourMode = atoi(p->value().c_str());
+        Serial.println(hourMode);
+        if(hourMode == 24)
+        {
+          Serial.println("24 hour clock");
+          tempDevice.is12Hour = false;
+        }
+        else
+        {
+          Serial.println("12 hour clock");
+          tempDevice.is12Hour = true;
+        }
+        continue;
+      }
+      // int fontPoints = 12;    // size of font to use for display
+      if (strcmp(p->name().c_str(), "fontsize_id") == 0)
+      {
+        tempDevice.fontPoints = atoi(p->value().c_str());
+        if((tempDevice.fontPoints !=  9) &&
+           (tempDevice.fontPoints != 12) &&
+           (tempDevice.fontPoints != 18) &&
+           (tempDevice.fontPoints != 24))
+        {
+          tempDevice.fontPoints =  12;
+        }
+        continue;
+      }
+      if (pageSource == 1) 
+      {
+        if(strcmp(p->name().c_str(), "update") == 0)
+        {
+          // update current car settings
+          strcpy(cars[carSetupIdx].carName, tempCar.carName);
+          cars[carSetupIdx].tireCount = tempCar.tireCount;
+          cars[carSetupIdx].positionCount = tempCar.positionCount;
+          for(int tireIdx = 0; tireIdx < 6; tireIdx++)
+          {
+            strcpy(cars[carSetupIdx].tireLongName[tireIdx], tempCar.tireLongName[tireIdx]);
+            strcpy(cars[carSetupIdx].tireShortName[tireIdx], tempCar.tireShortName[tireIdx]);
+            cars[carSetupIdx].maxTemp[tireIdx] = tempCar.maxTemp[tireIdx];
+          }
+          for(int posIdx = 0; posIdx < 3; posIdx++)
+          {
+            strcpy(cars[carSetupIdx].positionLongName[posIdx], tempCar.positionLongName[posIdx]);
+            strcpy(cars[carSetupIdx].positionShortName[posIdx], tempCar.positionShortName[posIdx]);
+          }
+          WriteCarSetupFile(SD, "/py_cars.txt");
+          WriteCarSetupHTML(/*SD*/LittleFS, "/py_cars.html", carSetupIdx);
+        }
+        else if ((strcmp(p->name().c_str(), "new") == 0))
+        {
+          // create a blank new car entry
+          carCount++;
+          carSetupIdx++;
+          if (void* mem = realloc(cars, sizeof(CarSettings) * carCount))
+          {
+            cars = static_cast<CarSettings*>(mem);
+          }
+          strcpy(cars[carCount - 1].carName, "-");
+          cars[carCount - 1].tireCount = 4;
+          cars[carCount - 1].positionCount = 3;
+          strcpy(cars[carCount - 1].tireShortName[0], "-");
+          strcpy(cars[carCount - 1].tireLongName[0], "-");
+          cars[carCount - 1].maxTemp[0] = 100.0;
+          strcpy(cars[carCount - 1].tireShortName[1], "-");
+          strcpy(cars[carCount - 1].tireLongName[1], "-");
+          cars[carCount - 1].maxTemp[1] = 100.0;
+          strcpy(cars[carCount - 1].tireShortName[2], "-");
+          strcpy(cars[carCount - 1].tireLongName[2], "-");
+          cars[carCount - 1].maxTemp[2] = 100.0;
+          strcpy(cars[carCount - 1].tireShortName[3], "-");
+          strcpy(cars[carCount - 1].tireLongName[3], "-");
+          cars[carCount - 1].maxTemp[3] = 100.0;
+
+          strcpy(cars[carCount - 1].positionShortName[0], "-");
+          strcpy(cars[carCount - 1].positionLongName[0], "-");
+          strcpy(cars[carCount - 1].positionShortName[1], "-");
+          strcpy(cars[carCount - 1].positionLongName[1], "-");
+          strcpy(cars[carCount - 1].positionShortName[2], "-");
+          strcpy(cars[carCount - 1].positionLongName[2], "-");
+          WriteCarSetupFile(SD, "/py_cars.txt");
+          WriteCarSetupHTML(/*SD*/LittleFS, "/py_cars.html", carSetupIdx);
+        }
+        else if ((strcmp(p->name().c_str(), "delete") == 0))
+        {
+          // delete current car entry
+          for(int carIdx = carSetupIdx; carIdx < carCount - 1; carIdx++)
+          {
+            cars[carIdx] = cars[carIdx + 1];
+          }
+          carCount--;
+          if (void* mem = realloc(cars, sizeof(CarSettings) * carCount))
+          {
+            cars = static_cast<CarSettings*>(mem);
+          }
+          WriteCarSetupFile(SD, "/py_cars.txt");
+          WriteCarSetupHTML(/*SD*/LittleFS, "/py_cars.html", carSetupIdx);
+        }
+        // buttons
+        if (strcmp(p->name().c_str(), "next") == 0)
+        {
+          carSetupIdx = carSetupIdx + 1 < carCount ? carSetupIdx + 1 : carCount - 1;
+          WriteCarSetupHTML(/*SD*/LittleFS, "/py_cars.html", carSetupIdx);
+          request->send(/*SD*/LittleFS, "/py_cars.html", "text/html");
+        }
+        if (strcmp(p->name().c_str(), "prior") == 0)
+        {
+          carSetupIdx = carSetupIdx - 1 >= 0 ? carSetupIdx - 1 : 0;
+          WriteCarSetupHTML(/*SD*/LittleFS, "/py_cars.html", carSetupIdx);
+          request->send(/*SD*/LittleFS, "/py_cars.html", "text/html");
+        }
+        request->send(/*SD*/LittleFS, "/py_cars.html", "text/html");
+      }
+      else if (pageSource == 2)
+      {
+        if (strcmp(p->name().c_str(), "update") == 0)
+        {
+          // update device settings
+          strcpy(deviceSettings.ssid, tempDevice.ssid);
+          strcpy(deviceSettings.pass , tempDevice.pass);
+          deviceSettings.tempUnits = tempDevice.tempUnits;
+          deviceSettings.screenRotation = tempDevice.screenRotation;
+          deviceSettings.is12Hour = tempDevice.is12Hour;
+          deviceSettings.fontPoints = tempDevice.fontPoints;
+          WriteDeviceSetupFile(SD, "/py_set.txt");
+          WriteDeviceSetupHTML(/*SD*/LittleFS, "/py_set.html");
+          request->send(/*SD*/LittleFS, "/py_set.html", "text/html");
+        }
+      }
+      else
+      {
+        request->send(/*SD*/LittleFS, "/py_main.html", "text/html");
+      }
+    }
+  });
+  server.begin();
+  /* 
   server.on("/", HTTP_GET, handleRoot);
   server.onNotFound(handleNotFound);
   wsServoInput.onEvent(onServoInputWebSocketEvent);
@@ -425,6 +753,7 @@ void setup()
   wsServoInput.onEvent(onServoInputWebSocketEvent);
   server.addHandler(&wsServoInput);
   server.begin();
+  */
   sprintf(outStr, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
@@ -510,7 +839,7 @@ void DisplayMenu()
   int menuCount = 6;
   MenuChoice mainMenuChoices[6];  
   mainMenuChoices[0].description = "Measure Temps";                   mainMenuChoices[0].result = MEASURE_TIRES;
-  mainMenuChoices[1].description = cars[selectedCar].carName.c_str(); mainMenuChoices[1].result = SELECT_CAR;
+  mainMenuChoices[1].description = cars[selectedCar].carName; mainMenuChoices[1].result = SELECT_CAR;
   mainMenuChoices[2].description = "Display Temps";                   mainMenuChoices[2].result = DISPLAY_TIRES;
   mainMenuChoices[3].description = "Instant Temp";                    mainMenuChoices[3].result = INSTANT_TEMP;
   mainMenuChoices[4].description = "Display Selected Results";        mainMenuChoices[4].result = DISPLAY_SELECTED_RESULT;
@@ -824,7 +1153,7 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
   YamuraBanner();
   DrawGrid(currentResultCar.tireCount);
 
-  sprintf(outStr, "%s %s", currentResultCar.carName.c_str(), currentResultCar.dateTime.c_str());
+  sprintf(outStr, "%s %s", currentResultCar.carName, currentResultCar.dateTime);
   SetFont(deviceSettings.fontPoints <= 12 ? deviceSettings.fontPoints : 12);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
   tftDisplay.drawString(outStr, 5, 0, GFXFF);
@@ -857,12 +1186,12 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
       }
       if(tirePosIdx == 0)
       {
-        sprintf(outStr, "%s %s", currentResultCar.tireShortName[idxTire].c_str(),
-                                 currentResultCar.positionShortName[tirePosIdx].c_str());
+        sprintf(outStr, "%s %s", currentResultCar.tireShortName[idxTire],
+                                 currentResultCar.positionShortName[tirePosIdx]);
       }
       else
       {
-        sprintf(outStr, "%s", currentResultCar.positionShortName[tirePosIdx].c_str());
+        sprintf(outStr, "%s", currentResultCar.positionShortName[tirePosIdx]);
       }
 	  // tire name, position
       DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLACK);
@@ -938,7 +1267,7 @@ void MeasureAllTireTemps()
   SetFont(deviceSettings.fontPoints <= 12 ? deviceSettings.fontPoints : 12);
   while(true)
   {
-    sprintf(outStr, "%s", cars[selectedCar].carName.c_str());
+    sprintf(outStr, "%s", cars[selectedCar].carName);
     tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
     tftDisplay.drawString(outStr, 5, 0, GFXFF);
 
@@ -984,12 +1313,12 @@ void MeasureAllTireTemps()
 		      col = tirePosIdx + ((idxTire % 2) * 3);
           if(tirePosIdx == 0)
           {
-            sprintf(outStr, "%s %s", cars[selectedCar].tireShortName[idxTire].c_str(),
-                                   cars[selectedCar].positionShortName[tirePosIdx].c_str());
+            sprintf(outStr, "%s %s", cars[selectedCar].tireShortName[idxTire],
+                                   cars[selectedCar].positionShortName[tirePosIdx]);
           }
           else
           {
-            sprintf(outStr, "%s", cars[selectedCar].positionShortName[tirePosIdx].c_str());
+            sprintf(outStr, "%s", cars[selectedCar].positionShortName[tirePosIdx]);
           }
           if(idxTire == selTire)
           {
@@ -1092,18 +1421,18 @@ void MeasureAllTireTemps()
   tftDisplay.drawString("Storing results...", textPosition[0], textPosition[1], GFXFF);
     // done, copy local to global
   #ifdef HAS_RTC
-  cars[selectedCar].dateTime = GetStringTime();
   String curTimeStr;
   curTimeStr = GetStringTime();
+  strcpy(cars[selectedCar].dateTime, curTimeStr.c_str());
   curTimeStr += " ";
   curTimeStr += GetStringDate();
   sprintf(outStr, "%s;%s;%d;%d", curTimeStr.c_str(), 
-                                 cars[selectedCar].carName.c_str(),
+                                 cars[selectedCar].carName,
                                  cars[selectedCar].tireCount, 
                                  cars[selectedCar].positionCount);
   #else
   sprintf(outStr, "%d;%s;%d;%d", millis(), 
-                                 cars[selectedCar].carName.c_str(), 
+                                 cars[selectedCar].carName, 
                                  cars[selectedCar].tireCount, 
                                  cars[selectedCar].positionCount);
   #endif
@@ -1383,7 +1712,7 @@ void ChangeSettings()
         Select12or24();
         break;
       case SET_SAVESETTINGS:
-        WriteDeviceSetupFile(SD, "/py_setup.txt");
+        WriteDeviceSetupFile(SD, "/py_set.txt");
         break;
       case SET_IPADDRESS:
         break;
@@ -1642,44 +1971,44 @@ void ReadCarSetupFile(fs::FS &fs, const char * path)
   }
   ReadLine(file, buf);
   carCount = atoi(buf);
-  cars = new CarSettings[carCount];
+  cars = (CarSettings*)calloc(carCount, sizeof(CarSettings));
   int maxTires = 0;
   int maxPositions = 0;
   for(int carIdx = 0; carIdx < carCount; carIdx++)
   {
     // read name
     ReadLine(file, buf);
-    cars[carIdx].carName = buf;
+    strcpy(cars[carIdx].carName, buf);
     // read tire count and create arrays
     ReadLine(file, buf);
     cars[carIdx].tireCount = atoi(buf);
     maxTires = maxTires > cars[carIdx].tireCount ? maxTires : cars[carIdx].tireCount;
-    cars[carIdx].maxTemp = (float*)calloc(maxTires, sizeof(float));
-    cars[carIdx].tireShortName = new String[cars[carIdx].tireCount];
-    cars[carIdx].tireLongName = new String[cars[carIdx].tireCount];
+    //cars[carIdx].maxTemp = (float*)calloc(maxTires, sizeof(float));
+    //cars[carIdx].tireShortName = new String[cars[carIdx].tireCount];
+    //cars[carIdx].tireLongName = new String[cars[carIdx].tireCount];
     // read tire short and long names
     for(int tireIdx = 0; tireIdx < cars[carIdx].tireCount; tireIdx++)
     {
       ReadLine(file, buf);
-      cars[carIdx].tireShortName[tireIdx] = buf;
+      strcpy(cars[carIdx].tireShortName[tireIdx], buf);
       ReadLine(file, buf);
-      cars[carIdx].tireLongName[tireIdx] = buf;
+      strcpy(cars[carIdx].tireLongName[tireIdx], buf);
       ReadLine(file, buf);
       cars[carIdx].maxTemp[tireIdx] = atof(buf);
     }
     // read measurement count and create arrays
     ReadLine(file, buf);
     cars[carIdx].positionCount = atoi(buf);
-    cars[carIdx].positionShortName = new String[cars[carIdx].positionCount];
-    cars[carIdx].positionLongName = new String[cars[carIdx].positionCount];
+    //cars[carIdx].positionShortName = new String[cars[carIdx].positionCount];
+    //cars[carIdx].positionLongName = new String[cars[carIdx].positionCount];
     maxPositions = maxPositions > cars[carIdx].positionCount ? maxPositions : cars[carIdx].positionCount;
     // read tire short and long names
     for(int positionIdx = 0; positionIdx < cars[carIdx].positionCount; positionIdx++)
     {
       ReadLine(file, buf);
-      cars[carIdx].positionShortName[positionIdx] = buf;
+      strcpy(cars[carIdx].positionShortName[positionIdx], buf);
       ReadLine(file, buf);
-      cars[carIdx].positionLongName[positionIdx] = buf;
+      strcpy(cars[carIdx].positionLongName[positionIdx], buf);
     }
     // seperator
     ReadLine(file, buf);
@@ -1692,121 +2021,268 @@ void ReadCarSetupFile(fs::FS &fs, const char * path)
 //
 void WriteCarSetupFile(fs::FS &fs, const char * path)
 {
+  char buf[512];
   File file = fs.open(path, FILE_WRITE);
   if(!file)
   {
     return;
   }
-  file.println("5");            // number of cars
-  file.println("Brian Z4");    // car
-  file.println("4");           // wheels
-  file.println("LF");
-  file.println("Left Front");
-  file.println("110.0");
-  file.println("RF");
-  file.println("Right Front");
-  file.println("110.0");
-  file.println("LR");
-  file.println("Left Rear");
-  file.println("110.0");
-  file.println("RR");
-  file.println("Right Rear");
-  file.println("110.0");
-  file.println("3");           // Measurements
-  file.println("O");
-  file.println("Outer");
-  file.println("M");
-  file.println("Middle");
-  file.println("I");
-  file.println("Inner");
-  file.println("=========="); 
-  file.println("Mark MR2");    // car
-  file.println("4");           // wheels
-  file.println("RF");
-  file.println("Left Front");
-  file.println("110.0");
-  file.println("LR");
-  file.println("Right Front");
-  file.println("110.0");
-  file.println("LF");
-  file.println("Left Rear");
-  file.println("110.0");
-  file.println("RR");
-  file.println("Right Rear");
-  file.println("110.0");
-  file.println("3");           // Measurements
-  file.println("O");
-  file.println("Outer");
-  file.println("M");
-  file.println("Middle");
-  file.println("I");
-  file.println("Inner");
-  file.println("=========="); 
-  file.println("Jody P34");    // car
-  file.println("6");           // wheels
-  file.println("LF");
-  file.println("Left Front");
-  file.println("110.0");
-  file.println("RF");
-  file.println("Right Front");
-  file.println("110.0");
-  file.println("RM");
-  file.println("LM");
-  file.println("Left Mid");
-  file.println("110.0");
-  file.println("Right Mid");
-  file.println("110.0");
-  file.println("LR");
-  file.println("Left Rear");
-  file.println("110.0");
-  file.println("RR");
-  file.println("Right Rear");
-  file.println("110.0");
-  file.println("3");           // Measurements
-  file.println("O");
-  file.println("Outer");
-  file.println("M");
-  file.println("Middle");
-  file.println("I");
-  file.println("Inner");
-  file.println("=========="); 
-  file.println("Doc YRZ-M1");    // car
-  file.println("2");           // wheels
-  file.println("F");
-  file.println("Front");
-  file.println("110.0");
-  file.println("R");
-  file.println("Rear");
-  file.println("110.0");
-  file.println("3");           // Measurements
-  file.println("O");
-  file.println("Outer");
-  file.println("M");
-  file.println("Middle");
-  file.println("I");
-  file.println("Inner");
-  file.println("=========="); 
-  file.println("Nigel Super3");    // car
-  file.println("3");           // wheels
-  file.println("LF");
-  file.println("Left Front");
-  file.println("110.0");
-  file.println("RF");
-  file.println("Right Front");
-  file.println("110.0");
-  file.println("R");
-  file.println("Rear");
-  file.println("110.0");
-  file.println("3");           // Measurements
-  file.println("O");
-  file.println("Outer");
-  file.println("M");
-  file.println("Middle");
-  file.println("I");
-  file.println("Inner");
-  file.println("=========="); 
-
+  sprintf(buf, "%d", carCount);
+  file.println(buf);            // number of cars
+  for(int carIdx = 0; carIdx < carCount; carIdx++)
+  {
+    file.println(cars[carIdx].carName);    // car
+    sprintf(buf, "%d", cars[carIdx].tireCount);
+    file.println(buf);
+    for(int wheelIdx = 0; wheelIdx < cars[carIdx].tireCount; wheelIdx++)
+    {
+      sprintf(buf, "%s", cars[carIdx].tireShortName[wheelIdx]);
+      file.println(buf);
+      sprintf(buf, "%s", cars[carIdx].tireLongName[wheelIdx]);
+      file.println(buf);
+      sprintf(buf, "%0.2lf", cars[carIdx].maxTemp[wheelIdx]);
+      file.println(buf);
+    }
+    sprintf(buf, "%d", cars[carIdx].positionCount);
+    file.println(buf);
+    for(int posIdx = 0; posIdx < cars[carIdx].positionCount; posIdx++)
+    {
+      sprintf(buf, "%s", cars[carIdx].positionShortName[posIdx]);
+      file.println(buf);
+      sprintf(buf, "%s", cars[carIdx].positionLongName[posIdx]);
+      file.println(buf);
+    }
+    file.println("=========="); 
+  }
   file.close();
+  
+  //#ifdef DEBUG_VERBOSE
+  Serial.println("Done writing, readback");
+  file = fs.open(path, FILE_READ);
+  Serial.println(path);
+  while(true)
+  {
+    ReadLine(file, buf);
+    if(strlen(buf)==0)
+    {
+      break;
+    }
+    Serial.println(buf);
+  }
+  Serial.println("Done");
+  file.close();
+  //#endif
+}
+//
+//
+//
+void WriteCarSetupHTML(fs::FS &fs, const char * path, int carIdx)
+{
+  DeleteFile(fs, path);
+  char buf[512];
+  File file = fs.open(path, FILE_WRITE);
+  if(!file)
+  {
+    return;
+  }
+  file.println("<html>");
+  file.println("<head>");
+  file.println("<meta charset=\"UTF-8\">");
+  file.println("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
+  file.println("<meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\" />");
+  file.println("<meta http-equiv=\"Pragma\" content=\"no-cache\" /><meta http-equiv=\"Expires\" content=\"0\"/>");
+  file.println("<title>Yamura Tire Pyrometer</title>");
+  file.println("<link rel=\"icon\" href=\"data:,\">");
+  file.println("<link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
+  file.println("</head>");
+  file.println("<body>");
+  file.println("<div class=\"content\">");
+  file.println("<div class=\"card-grid\">");
+  file.println("<div class=\"card\">");
+  file.println("<form action=\"/\" method=\"POST\">");
+  file.println("<p>");
+  
+  file.println("<div>");
+  file.println("<h3>Car and Driver Info</h3>");
+  file.println("</div>");
+
+  file.println("<div class=\"dInput\" v-if=\"activeStage == 3\">");
+  file.println("<div><label for=\"car_id\">Car/Driver</label>");
+  sprintf(buf, "<input type=\"text\" id =\"car_id\" name=\"car_id\" value = \"%s\"></div>", cars[carIdx].carName);
+  file.println(buf);
+  file.println("</div>");
+
+  sprintf(buf, "<div><label for=\"tirecount_id\">Tires (%d)</label>", cars[carIdx].tireCount);
+  file.println(buf);
+  file.println("<div><select id =\"tirecount_id\" name=\"tirecount_id\"><br>");
+  sprintf(buf, "<option>%d</option>", cars[carIdx].tireCount);
+  file.println(buf);
+  file.println("<option>2</option>");  
+  file.println("<option>3</option>");
+  file.println("<option>4</option>");
+  file.println("<option>6</option>");
+  file.println("</select>");
+
+  sprintf(buf, "<div><label for=\"measurecount_id\">Measurements (%d)</label>", cars[carIdx].positionCount);
+  file.println(buf);
+  file.println("<div><select id =\"measurecount_id\" name=\"measurecount_id\"><br>");
+  sprintf(buf, "<option>%d</option>", cars[carIdx].positionCount);
+  file.println(buf);
+  file.println("<option>1</option>");  
+  file.println("<option>2</option>");
+  file.println("<option>3</option>");
+  file.println("</select>");
+  
+  file.println("</div>");
+  file.println("</p>");
+  file.println("<p>");
+  file.println("<div>");
+  file.println("<h3>Tire Info</h3>");
+  file.println("</div>");
+  for(int tireIdx = 0; tireIdx < 6; tireIdx++)
+  {
+    sprintf(buf, "<div class=\"dInput\" v-if=\"activeStage == 3\">");
+    file.println(buf);
+    if(tireIdx == 0)
+    {
+      sprintf(buf, "<div><label for=\"tire%d_full_id\">Full</label>", tireIdx);
+    }
+    else
+    {
+      sprintf(buf, "<div>");//<label for=\"tire%d_full_id\"></label>", tireIdx);
+    }
+    file.println(buf);
+    if(tireIdx < cars[carIdx].tireCount)
+    {
+      sprintf(buf, "<input type=\"text\" id =\"tire%d_full_id\" name=\"tire%d_full_id\" value = \"%s\"></div>", tireIdx, tireIdx, cars[carIdx].tireLongName[tireIdx]);
+    }
+    else
+    {
+      sprintf(buf, "<input type=\"text\" id =\"tire%d_full_id\" name=\"tire%d_full_id\" value = \"%s\"></div>", tireIdx, tireIdx, "-");
+    }
+    file.println(buf);
+    if(tireIdx == 0)
+    {
+      sprintf(buf, "<div><label for=\"tire%d_short_id\">Short</label>", tireIdx);
+    }
+    else
+    {
+      sprintf(buf, "<div><label for=\"tire%d_short_id\"></label>", tireIdx);
+    }
+
+    file.println(buf);
+    if(tireIdx < cars[carIdx].tireCount)
+    {
+      sprintf(buf, "<input type=\"text\" id =\"tire%d_short_id\" name=\"tire%d_short_id\" value = \"%s\"></div>",  tireIdx, tireIdx, cars[carIdx].tireShortName[tireIdx]);
+    }
+    else
+    {
+      sprintf(buf, "<input type=\"text\" id =\"tire%d_short_id\" name=\"tire%d_short_id\" value = \"%s\"></div>",  tireIdx, tireIdx, "-");
+    }
+    file.println(buf);
+    if(tireIdx == 0)
+    {
+      sprintf(buf, "<div><label for=\"tire%d_maxt_id\">Max T</label>", tireIdx);
+    }
+    else
+    {
+      sprintf(buf, "<div><label for=\"tire%d_maxt_id\"></label>", tireIdx);
+    }
+    file.println(buf);
+    if(tireIdx < cars[carIdx].tireCount)
+    {
+      sprintf(buf, "<input type=\"text\" id =\"tire%d_maxt_id\" name=\"tire%d_maxt_id\" value = \"%0.1lf\"></div>", tireIdx, tireIdx, cars[carIdx].maxTemp[tireIdx]);
+    }
+    else
+    {
+      sprintf(buf, "<input type=\"text\" id =\"tire%d_maxt_id\" name=\"tire%d_maxt_id\" value = \"%s\"></div>", tireIdx, tireIdx, "-");
+    }
+    file.println(buf);
+    sprintf(buf, "</div>");
+    file.println(buf);
+  }
+  file.println("</p>");
+  file.println("<p>");
+  file.println("<div>");
+  file.println("<h3>Measure Points</h3>");
+  file.println("</div>");
+  for(int measIdx = 0; measIdx < 3; measIdx++)
+  {
+    file.println("<div class=\"dInput\" v-if=\"activeStage == 3\">");
+    if(measIdx == 0)
+    {
+      sprintf(buf, "<div><label for=\"position%d_full_id\">Full</label>", measIdx);
+    }
+    else
+    {
+      sprintf(buf, "<div>");
+    }
+    file.println(buf);
+    if(measIdx < cars[carIdx].positionCount)
+    {
+      sprintf(buf, "<input type=\"text\" id =\"position%d_full_id\" name=\"position%d_full_id\" value = \"%s\"></div>", measIdx, measIdx, cars[carIdx].positionLongName[measIdx]);
+    }
+    else
+    {
+      sprintf(buf, "<input type=\"text\" id =\"position%d_full_id\" name=\"position%d_full_id\" value = \"%s\"></div>", measIdx, measIdx, "-");
+    }
+    file.println(buf);
+    if(measIdx == 0)
+    {
+      sprintf(buf, "<div><label for=\"position%d_short_id\">Short</label>", measIdx);
+    }
+    else
+    {
+      sprintf(buf, "<div>");
+    }
+
+    file.println(buf);
+    if(measIdx < cars[carIdx].positionCount)
+    {
+      sprintf(buf, "<input type=\"text\" id =\"position%d_short_id\" name=\"position%d_short_id\" value = \"%s\"></div>", measIdx, measIdx, cars[carIdx].positionShortName[measIdx]);
+    }
+    else
+    {
+      sprintf(buf, "<input type=\"text\" id =\"position%d_short_id\" name=\"position%d_short_id\" value = \"%s\"></div>", measIdx, measIdx, "-");
+    }
+    file.println(buf);
+    file.println("</div>");
+  }
+  file.println("<\table>");
+  file.println("<p>");
+  file.println("<div>");
+  file.println("<h3>Actions</h3>");
+  file.println("</div>");
+  file.println("<button name=\"update\" type =\"submit\" value =\"update\">Update</button>");
+  file.println("<button name=\"prior\"  type =\"submit\" value =\"prior\">Prior</button>");
+  file.println("<button name=\"next\"   type =\"submit\" value =\"next\">Next</button>");
+  file.println("<button name=\"delete\" type =\"submit\" value =\"delete\">Delete</button>");
+  file.println("<button name=\"new\"    type =\"submit\" value =\"new\">New</button>");
+  file.println("<button name=\"home\" type=\"submit\" value=\"home\"><a href=\"/py_main.html\">Home</a></button>");
+  file.println("</p>");
+  file.println("</form>");
+  file.println("</div>");
+  file.println("</div>");
+  file.println("</div>");
+  file.println("</body>");
+  file.println("</html>");
+  file.close();
+  delay(100);
+  #ifdef DEBUG_VERBOSE
+  file = fs.open(path, FILE_READ);
+  Serial.println(path);
+  while(true)
+  {
+    ReadLine(file, buf);
+    if(strlen(buf)==0)
+    {
+      break;
+    }
+    Serial.println(buf);
+  }
+  Serial.println("Done");
+  file.close();
+  #endif
 }
 //
 //
@@ -1840,6 +2316,7 @@ void ReadDeviceSetupFile(fs::FS &fs, const char * path)
 //
 void WriteDeviceSetupFile(fs::FS &fs, const char * path)
 {
+  char buf[512];
   DeleteFile(fs, path);
   File file = fs.open(path, FILE_WRITE);
   if(!file)
@@ -1852,6 +2329,165 @@ void WriteDeviceSetupFile(fs::FS &fs, const char * path)
   file.println(deviceSettings.tempUnits ? 1 : 0);
   file.println(deviceSettings.is12Hour ? 1 : 0);
   file.println(deviceSettings.fontPoints);
+  file.close();
+  #ifdef DEBUG_VERBOSE
+  Serial.println("Done writing, readback");
+  file = fs.open(path, FILE_READ);
+  Serial.println(path);
+  while(true)
+  {
+    ReadLine(file, buf);
+    if(strlen(buf)==0)
+    {
+      break;
+    }
+    Serial.println(buf);
+  }
+  Serial.println("Done");
+  file.close();
+  #endif
+}
+//
+//
+//
+void WriteDeviceSetupHTML(fs::FS &fs, const char * path)
+{
+  int selectedIndex = 0;
+  char buf[512];
+  DeleteFile(fs, path);
+  File file = fs.open(path, FILE_WRITE);
+  if(!file)
+  {
+    return;
+  }
+  file.println("<!DOCTYPE html>");
+  file.println("<html>");
+  file.println("<head>");
+  file.println("<meta charset=\"UTF-8\">");
+  file.println("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+  file.println("<meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\" />");
+  file.println("<meta http-equiv=\"Pragma\" content=\"no-cache\" /><meta http-equiv=\"Expires\" content=\"0\"/>");
+  file.println("<title>Yamura Pyrometer Setup</title>");
+  file.println("<link rel=\"icon\" href=\"data:,\">");
+  file.println("<link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
+  file.println("</head>");
+
+  file.println("<body>");
+  file.println("<div class=\"content\">");
+  file.println("<div class=\"card-grid\">");
+  file.println("<div class=\"card\">");
+  file.println("<form action=\"/\" method=\"POST\">");
+
+  file.println("<p>");
+  file.println("<div>");
+  file.println("<h3>Pyrometer Settings</h3>");
+  file.println("</div>");
+  file.println("</p>");
+
+  file.println("<p>");
+  file.println("<div class=\"dinput\" v-if=\"activeStage == 3\">");
+  file.println("<label for=\"ssid_id\">SSID</label>");
+  sprintf(buf, "<div><input type=\"text\" id =\"ssid_id\" name=\"ssid_id\" value = \"%s\"><br>", deviceSettings.ssid);
+  file.println(buf);
+  file.println("</div>");
+  file.println("</p>");
+  
+  file.println("<p>");
+  file.println("<div class=\"dinput\" v-if=\"activeStage == 3\">");
+  file.println("<label for=\"pass_id\">Password</label>");
+  sprintf(buf, "<div><input type=\"text\" id =\"pass_id\" name=\"pass_id\" value = \"%s\"><br>", deviceSettings.pass);
+  file.println(buf);
+  file.println("</div>");
+  file.println("</p>");
+  
+  file.println("<p>");
+  file.println("<div class=\"dinput\" v-if=\"activeStage == 3\">");
+  selectedIndex = deviceSettings.tempUnits == true ? 0 : 1;
+  sprintf(buf, "<label for=\"units_id\">Temperature Units (%s)</label>", (deviceSettings.tempUnits == true ? "C" : "F"));
+  file.println(buf);
+  file.println("<div><select id =\"units_id\" name=\"units_id\"><br>");
+  sprintf(buf, "<option>%s</option>", (deviceSettings.tempUnits == true ? "C" : "F"));
+  file.println(buf);
+  file.println("<option>F</option>");  
+  file.println("<option>C</option>");
+  file.println("</select>");
+  file.println("</div>");
+  file.println("</p>");
+
+  file.println("<p>");
+  file.println("<div class=\"dinput\" v-if=\"activeStage == 3\">");
+  sprintf(buf, "<label for=\"orientation_id\">Screen Orientation (%s)</label>", (deviceSettings.screenRotation == 1 ? "R" : "L"));
+  file.println(buf);
+  file.println("<div><select id =\"orientation_id\" name=\"orientation_id\"><br>");
+  sprintf(buf, "<option>%s</option>", (deviceSettings.screenRotation == 1 ? "R" : "L"));
+  file.println(buf);
+  file.println("<option>R</option>");  
+  file.println("<option>L</option>");
+  file.println("</select>");
+  file.println("</div>");
+  file.println("</p>");
+
+  file.println("<p>");
+  file.println("<div class=\"dinput\" v-if=\"activeStage == 3\">");
+  sprintf(buf, "<label for=\"clock_id\">Clock (%d)</label>", (deviceSettings.is12Hour == true ? 12 : 24));
+  file.println(buf);
+  file.println("<div><select id =\"clock_id\" name=\"clock_id\"><br>");
+  sprintf(buf, "<option>%d</option>", (deviceSettings.is12Hour == true ? 12 : 24));
+  file.println(buf);
+  file.println("<option>12</option>");  
+  file.println("<option>24</option>");
+  file.println("</select>");
+  file.println("</div>");
+  file.println("</p>");
+
+  file.println("<p>");
+  file.println("<div class=\"dinput\" v-if=\"activeStage == 3\">");
+  sprintf(buf, "<label for=\"fontsize_id\">Font Size (%d)</label>", deviceSettings.fontPoints);
+  file.println(buf);
+  file.println("<div><select id =\"fontsize_id\" name=\"fontsize_id\"><br>");
+  sprintf(buf, "<option>%d</option>", deviceSettings.fontPoints);
+  file.println(buf);
+  file.println("<option>9</option>");
+  file.println("<option>12</option>");  
+  file.println("<option>18</option>");
+  file.println("<option>24</option>");
+  file.println("</select>");
+
+  file.println("</div>");
+  file.println("</p>");
+  
+  file.println("<p>");
+  file.println("<div>");
+  file.println("<h3>Actions</h3>");
+  file.println("</div>");  
+  file.println("<button name=\"update\" type =\"submit\" value =\"update\">Update</button>");
+  file.println("<button><a href=\"py_main.html\">Home</a></button>");
+  file.println("</p>");
+  file.println("</form>");
+  file.println("</div>");
+  file.println("</div>");
+  file.println("</div>");
+  file.println("</div>");
+  file.println("</body>");
+  file.println("</html>");
+  file.close();
+
+  #ifdef DEBUG_VERBOSE
+  Serial.println("Done writing, readback");
+  file = fs.open(path, FILE_READ);
+  Serial.println(path);
+  while(true)
+  {
+    ReadLine(file, buf);
+    if(strlen(buf)==0)
+    {
+      break;
+    }
+    Serial.println(buf);
+  }
+  Serial.println("Done");
+  file.close();
+  #endif
 }
 //
 //
@@ -1875,7 +2511,7 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     tftDisplay.fillScreen(TFT_BLACK);
     YamuraBanner();
     tftDisplay.drawString("No results for", 5, 0,  GFXFF);
-    tftDisplay.drawString(cars[selectedCar].carName.c_str(), 5, fontHeight, GFXFF);
+    tftDisplay.drawString(cars[selectedCar].carName, 5, fontHeight, GFXFF);
     tftDisplay.drawString("Select another car", 5, 2* fontHeight, GFXFF);
     delay(5000);
     return;
@@ -1921,7 +2557,7 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
     tftDisplay.fillScreen(TFT_BLACK);
     YamuraBanner();
     tftDisplay.drawString("No results for", 5, 0, GFXFF);
-    tftDisplay.drawString(cars[selectedCar].carName.c_str(), 5, fontHeight, GFXFF);
+    tftDisplay.drawString(cars[selectedCar].carName, 5, fontHeight, GFXFF);
     tftDisplay.drawString("Select another car", 5, 2* fontHeight, GFXFF);
     delay(5000);
     return;
@@ -1933,7 +2569,7 @@ void DisplaySelectedResults(fs::FS &fs, const char * path)
   file.close();
   ParseResult(buf, currentResultCar);
   DisplayAllTireTemps(currentResultCar);
-  free(currentResultCar.maxTemp);
+  //free(currentResultCar.maxTemp);
 }
 //
 // write HTML display file
@@ -1967,23 +2603,25 @@ void WriteResultsHTML()
 {
   char buf[512];
   char nameBuf[128];
-  htmlStr = "";
+  //htmlStr = "";
   CarSettings currentResultCar;
   File fileIn;
   // create a new HTML file
-  SD.remove("/py_res.html");
-  AppendFile(SD, "/py_res.html", "<!DOCTYPE html>");
-  AppendFile(SD, "/py_res.html", "<html>");
-  AppendFile(SD, "/py_res.html", "<head>");
-  AppendFile(SD, "/py_res.html", "    <title>Recording Pyrometer</title>");
-  AppendFile(SD, "/py_res.html", "</head>");
-  AppendFile(SD, "/py_res.html", "<body>");
-  AppendFile(SD, "/py_res.html", "    <h1>Recorded Results</h1>");
-  AppendFile(SD, "/py_res.html", "    <table border=\"1\">");
-  AppendFile(SD, "/py_res.html", "        <tr>");
-  AppendFile(SD, "/py_res.html", "            <th>Date/Time</th>");
-  AppendFile(SD, "/py_res.html", "            <th>Car/Driver</th>");
-  AppendFile(SD, "/py_res.html", "        </tr>");
+  //Serial.println("py_res.html header");
+  LittleFS.remove("/py_res.html");
+  AppendFile(LittleFS, "/py_res.html", "<!DOCTYPE html>");
+  AppendFile(LittleFS, "/py_res.html", "<html>");
+  AppendFile(LittleFS, "/py_res.html", "<head>");
+  AppendFile(LittleFS, "/py_res.html", "<title>Recording Pyrometer</title>");
+  AppendFile(LittleFS, "/py_res.html", "</head>");
+  AppendFile(LittleFS, "/py_res.html", "<body>");
+  AppendFile(LittleFS, "/py_res.html", "<h1>Recorded Results</h1>");
+  AppendFile(LittleFS, "/py_res.html", "<p>");
+  AppendFile(LittleFS, "/py_res.html", "<table border=\"1\">");
+  AppendFile(LittleFS, "/py_res.html", "<tr>");
+  AppendFile(LittleFS, "/py_res.html", "<th>Date/Time</th>");
+  AppendFile(LittleFS, "/py_res.html", "<th>Car/Driver</th>");
+  AppendFile(LittleFS, "/py_res.html", "</tr>");
   float tireMin =  999.9;
   float tireMax = -999.9;
   int rowCount = 0;
@@ -1995,6 +2633,8 @@ void WriteResultsHTML()
     {
       continue;
     }
+    //Serial.print("Reading data file ");
+    //Serial.println(nameBuf);
     bool outputSubHeader = true;
     while(true)
     {
@@ -2005,28 +2645,29 @@ void WriteResultsHTML()
         break;
       }
       ParseResult(buf, currentResultCar);
+      //Serial.println("output measurements to py_res.html");
       if(outputSubHeader)
       {
-        AppendFile(SD, "/py_res.html", "        <tr>");
-        AppendFile(SD, "/py_res.html", "            <td></td>");
-        AppendFile(SD, "/py_res.html", "            <td></td>");
+        AppendFile(LittleFS, "/py_res.html", "<tr>");
+        AppendFile(LittleFS, "/py_res.html", "<td></td>");
+        AppendFile(LittleFS, "/py_res.html", "<td></td>");
         for(int t_idx = 0; t_idx < currentResultCar.tireCount; t_idx++)
         {
           for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
           {
-            sprintf(buf, "<td>%s-%s</td>", currentResultCar.tireShortName[t_idx].c_str(), currentResultCar.positionShortName[p_idx].c_str());
-            AppendFile(SD, "/py_res.html", buf);
+            sprintf(buf, "<td>%s-%s</td>", currentResultCar.tireShortName[t_idx], currentResultCar.positionShortName[p_idx]);
+            AppendFile(LittleFS, "/py_res.html", buf);
           }
         }
-        AppendFile(SD, "/py_res.html", "        </tr>");
+        AppendFile(LittleFS, "/py_res.html", "</tr>");
       }
       outputSubHeader = false;
       rowCount++;
-      AppendFile(SD, "/py_res.html", "		    <tr>");
-      sprintf(buf, "<td>%s</td>", currentResultCar.dateTime.c_str());
-      AppendFile(SD, "/py_res.html", buf);
-      sprintf(buf, "<td>%s</td>", currentResultCar.carName.c_str());
-      AppendFile(SD, "/py_res.html", buf);
+      AppendFile(LittleFS, "/py_res.html", "		    <tr>");
+      sprintf(buf, "<td>%s</td>", currentResultCar.dateTime);
+      AppendFile(LittleFS, "/py_res.html", buf);
+      sprintf(buf, "<td>%s</td>", currentResultCar.carName);
+      AppendFile(LittleFS, "/py_res.html", buf);
       for(int t_idx = 0; t_idx < currentResultCar.tireCount; t_idx++)
       {
         tireMin =  999.9;
@@ -2057,11 +2698,11 @@ void WriteResultsHTML()
           {
             sprintf(buf, "<td>%0.2f</td>", /*currentResultCar.positionShortName[p_idx].c_str(),*/ tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
           }
-          AppendFile(SD, "/py_res.html", buf);
+          AppendFile(LittleFS, "/py_res.html", buf);
         }
       }
-      AppendFile(SD, "/py_res.html", "		    </tr>");
-	  free(currentResultCar.maxTemp);
+      AppendFile(LittleFS, "/py_res.html", "</tr>");
+	    //free(currentResultCar.maxTemp);
     }
   }
   if(rowCount == 0)
@@ -2085,29 +2726,36 @@ void WriteResultsHTML()
         AppendFile(SD, "/py_res.html", buf);
       }
     }
-    AppendFile(SD, "/py_res.html", "		    </tr>");
+    AppendFile(SD, "/py_res.html", "</tr>");
   }
   fileIn.close();
-  AppendFile(SD, "/py_res.html", "    </table>");
-  AppendFile(SD, "/py_res.html", "</body>");
-  AppendFile(SD, "/py_res.html", "</html>");
-  
-  fileIn = SD.open("/py_res.html", FILE_READ);
-  if(!fileIn)
-  {
-    return;
-  }
+
+  AppendFile(LittleFS, "/py_res.html", "</table>");
+  AppendFile(LittleFS, "/py_res.html", "</p>");
+  AppendFile(LittleFS, "/py_res.html", "<p>");
+  AppendFile(LittleFS, "/py_res.html", "<button name=\"home\" type=\"submit\" value=\"home\"><a href=\"/py_main.html\">Home</a></button>");
+  AppendFile(LittleFS, "/py_res.html", "</p>");
+  AppendFile(LittleFS, "/py_res.html", "</body>");
+  AppendFile(LittleFS, "/py_res.html", "</html>");
+
+
+  #ifdef DEBUG_VERBOSE
+  Serial.println("Done writing, readback");
+  fileIn = LittleFS.open("/py_res.html", FILE_READ);
+  Serial.println("/py_res.html");
   while(true)
   {
     ReadLine(fileIn, buf);
-    // end of file
-    if(strlen(buf) == 0)
+    if(strlen(buf)==0)
     {
       break;
     }
-    htmlStr += buf;
+    Serial.println(buf);
   }
+  Serial.println("Done");
   fileIn.close();
+  #endif
+
 }
 //
 //
@@ -2149,27 +2797,27 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
     // 0 - timestamp
     if(tokenIdx == 0)
     {
-      currentResultCar.dateTime = token;      
+      strcpy(currentResultCar.dateTime, token);
     }
     // 1 - car info
     if(tokenIdx == 1)
     {
-      currentResultCar.carName = token;
+      strcpy(currentResultCar.carName, token);
     }
     // 2 - tire count
     else if(tokenIdx == 2)
     {
       currentResultCar.tireCount = atoi(token);
-      currentResultCar.tireShortName = new String[currentResultCar.tireCount];
-      currentResultCar.tireLongName = new String[currentResultCar.tireCount];
-      currentResultCar.maxTemp = (float*)calloc(currentResultCar.tireCount, sizeof(float));
+      //currentResultCar.tireShortName = new String[currentResultCar.tireCount];
+      //currentResultCar.tireLongName = new String[currentResultCar.tireCount];
+      //currentResultCar.maxTemp = (float*)calloc(currentResultCar.tireCount, sizeof(float));
     }
     // 3 - position count
     else if(tokenIdx == 3)
     {
       currentResultCar.positionCount = atoi(token);
-      currentResultCar.positionShortName = new String[currentResultCar.positionCount];
-      currentResultCar.positionLongName = new String[currentResultCar.positionCount];
+      //currentResultCar.positionShortName = new String[currentResultCar.positionCount];
+      //currentResultCar.positionLongName = new String[currentResultCar.positionCount];
       tempCnt = currentResultCar.tireCount * currentResultCar.positionCount;
       measureRange[0]  = tokenIdx + 1;  // measurements start at next token                                   // >= 5
       measureRange[1]  = measureRange[0] +  (currentResultCar.tireCount *  currentResultCar.positionCount) - 1;   // < 5 + 4*13 (17)
@@ -2190,15 +2838,15 @@ void ParseResult(char buf[], CarSettings &currentResultCar)
     // tire names
     else if((tokenIdx >= tireNameRange[0]) && (tokenIdx <= tireNameRange[1]))
     {
-      currentResultCar.tireShortName[tireIdx] = token;
-      currentResultCar.tireLongName[tireIdx] = token;
+      strcpy(currentResultCar.tireShortName[tireIdx], token);
+      strcpy(currentResultCar.tireLongName[tireIdx], token);
       tireIdx++;
     }
     // position names
     else if((tokenIdx >= posNameRange[0]) && (tokenIdx <= posNameRange[1]))
     {
-      currentResultCar.positionShortName[positionIdx] = token;
-      currentResultCar.positionLongName[positionIdx] = token;
+      strcpy(currentResultCar.positionShortName[positionIdx], token);
+      strcpy(currentResultCar.positionLongName[positionIdx], token);
       positionIdx++;
     }
     // max temps
@@ -2263,42 +2911,6 @@ void DeleteFile(fs::FS &fs, const char * path)
 //
 //
 //
-void handleRoot(AsyncWebServerRequest *request) 
-{
-  request->send_P(200, "text/html", htmlStr.c_str());
-}
-//
-//
-//
-void handleNotFound(AsyncWebServerRequest *request) 
-{
-  request->send(404, "text/plain", "File Not Found");
-}
-//
-//
-//
-void onServoInputWebSocketEvent(AsyncWebSocket *server, 
-                      AsyncWebSocketClient *client, 
-                      AwsEventType type,
-                      void *arg, 
-                      uint8_t *data, 
-                      size_t len) 
-{                      
-  switch (type) 
-  {
-    case WS_EVT_CONNECT:
-      break;
-    case WS_EVT_DISCONNECT:
-      break;
-    case WS_EVT_DATA:
-      break;
-    case WS_EVT_PONG:
-    case WS_EVT_ERROR:
-      break;
-    default:
-      break;  
-  }
-}
 bool IsPM()
 {
   DateTime now;
@@ -2735,4 +3347,40 @@ void SetFont(int fontSize)
   }
   tftDisplay.setTextDatum(TL_DATUM);
   fontHeight = tftDisplay.fontHeight(GFXFF);
+}
+//
+//
+//
+void listDir(fs::FS &fs, const char * dirname, uint8_t levels)
+{
+    Serial.printf("Listing directory: %s\r\n", dirname);
+
+    File root = fs.open(dirname);
+    if(!root){
+        Serial.println("- failed to open directory");
+        return;
+    }
+    if(!root.isDirectory()){
+        Serial.println(" - not a directory");
+        return;
+    }
+
+    File file = root.openNextFile();
+    while(file){
+        if(file.isDirectory()){
+            Serial.print("  DIR : ");
+            Serial.println(file.name());
+            if(levels){
+                listDir(fs, file.path(), levels -1);
+            }
+        } else {
+            Serial.print("  FILE: ");
+            Serial.print(file.name());
+            Serial.print("\tSIZE: ");
+            Serial.println(file.size());
+        }
+        file = root.openNextFile();
+    }
+    root.close();
+    file.close();
 }

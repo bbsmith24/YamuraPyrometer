@@ -1,0 +1,123 @@
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yamura Tire Pyrometer</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+  <div class="content">
+    <div class="card-grid">
+      <div class="card">
+        <form action="/" method="POST">
+          <p>
+            <div>
+             <h3>Car and Driver Info</h3>
+            </div>
+            <div class="input"> 
+              <label for="driver_id">Driver</label>
+              <input type="text" id ="driver_id_id" name="driver" value = "Driver"><br>
+            </div>
+            <div class="input"> 
+              <label for="pass_id">Car</label>
+              <input type="text" id ="car_id" name="car" value = "Car"><br>
+            </div>
+            <div class="input"> 
+              <label for="tirecount_id">Tire Count (2, 3, 6, or 6)</label>
+              <input type="text" id ="tirecount_id" name="tirecount "value = "6"><br>
+            </div>
+            <div class="input"> 
+              <label for="measurecount_id">Measurements per Tire (1, 2, or 3)</label>
+              <input type="text" id ="measurecount_id" name="measurecount" value = "3"><br>
+            </div>
+          </p>
+
+          <p>
+            <div>
+             <h3>Tire Info</h3>
+            </div>
+            <div class="dInput" v-if="activeStage == 3">
+              <div><label for="tire1_full_id">Full</label>
+              <input type="text" id ="tire1_full_id" name="tire1_full_id" value = "Right Front"></div>
+              <div><label for="tire1_short_id">Short</label>
+              <input type="text" id ="tire1_short_id" name="tire1_short_id" value = "RF"></div>
+              <div><label for="tire1_maxt_id">Max T</label>
+              <input type="text" id ="tire1_maxt_id" name="tire1_maxt_id" value = "110.0"></div><br>
+            </div>
+            <div class="dInput" v-if="activeStage == 3">
+              <div><label for="tire2_full_id"></label>
+              <input type="text" id ="tire2_full_id" name="tire2_full_id" value = "Left Front"></div>
+              <div><label for="tire2_short_id"></label>
+              <input type="text" id ="tire2_short_id" name="tire2_short_id" value = "LF"></div>
+              <div><label for="tire2_maxt_id"></label>
+              <input type="text" id ="tire2_maxt_id" name="tire2_maxt_id" value = "110.0"></div>
+            </div>
+            <div class="dInput" v-if="activeStage == 3">
+              <div><label for="tire4_full_id"></label>
+              <input type="text" id ="tire4_full_id" name="tire4_full_id" value = "Left Rear"></div>
+              <div><label for="tire4_short_id"></label>
+              <input type="text" id ="tire4_short_id" name="tire4_short_id" value = "LR"></div>
+              <div><label for="tire4_maxt_id"></label>
+              <input type="text" id ="tire4_maxt_id" name="tire4_maxt_id" value = "110.0"></div>
+            </div>
+            <div class="dInput" v-if="activeStage == 3">
+              <div><label for="tire4_full_id"></label>
+              <input type="text" id ="tire4_full_id" name="tire4_full_id" value = "Right Rear"></div>
+              <div><label for="tire4_short_id"></label>
+              <input type="text" id ="tire4_short_id" name="tire4_short_id" value = "RR"></div>
+              <div><label for="tire4_maxt_id"></label>
+              <input type="text" id ="tire4_maxt_id" name="tire4_maxt_id" value = "110.0"></div>
+            </div>
+            <div class="dInput" v-if="activeStage == 3">
+              <div><label for="tire5_full_id"></label>
+              <input type="text" id ="tire5_full_id" name="tire5_full_id" value = "-"></div>
+              <div><label for="tire5_short_id"></label>
+              <input type="text" id ="tire5_short_id" name="tire5_short_id" value = "-"></div>
+              <div><label for="tire5_maxt_id"></label>
+              <input type="text" id ="tire5_maxt_id" name="tire5_maxt_id" value = "-"></div>
+            </div>
+            <div class="dInput" v-if="activeStage == 3">
+              <div><label for="tire6_full_id"></label>
+              <input type="text" id ="tire6_full_id" name="tire6_full_id" value = "-"></div>
+              <div><label for="tire6_short_id"></label>
+              <input type="text" id ="tire6_short_id" name="tire6_short_id" value = "-"></div>
+              <div><label for="tire6_maxt_id"></label>
+              <input type="text" id ="tire6_maxt_id" name="tire6_maxt_id" value = "-"></div>
+            </div>
+          </p>
+		  <p>
+            <div>
+             <h3>Measure Points</h3>
+            </div>
+            <div class="dInput" v-if="activeStage == 3">
+              <div><label for="position1_full_id">Full</label>
+              <input type="text" id ="position1_full_id" name="position1_full_id" value = "Outer"></div>
+              <div><label for="position1_short_id">Short</label>
+              <input type="text" id ="position1_short_id" name="position1_short_id" value = "O"></div>
+            </div>
+            <div class="dInput" v-if="activeStage == 3">
+              <div><label for="position2_full_id"></label>
+              <input type="text" id ="position2_full_id" name="position2_full_id" value = "Center"></div>
+              <div><label for="position2_short_id"></label>
+              <input type="text" id ="position2_short_id" name="position2_short_id" value = "C"></div>
+            </div>
+            <div class="dInput" v-if="activeStage == 3">
+              <div><label for="position3_full_id"></label>
+              <input type="text" id ="position3_full_id" name="position3_full_id" value = "Inner"></div>
+              <div><label for="position3_short_id"></label>
+              <input type="text" id ="position3_short_id" name="position3_short_id" value = "I"></div>
+            </div>
+		  </p>
+        </form>
+      </div>
+    </div>
+  </div>
+  <input type ="submit" value ="Update">
+  <input type ="submit" value ="Prior">
+  <input type ="submit" value ="Next">
+  <input type ="submit" value ="New">
+  <input type ="submit" value ="Delete">
+  <button><a href="py_main.html">Home</a></button>
+</body>
+</html>
