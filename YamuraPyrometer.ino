@@ -2601,7 +2601,6 @@ void WriteResultsHTML()
 {
   char buf[512];
   char nameBuf[128];
-  //htmlStr = "";
   CarSettings currentResultCar;
   File fileIn;   // data source file
   File fileOut;  // html results file
@@ -2799,7 +2798,7 @@ void WriteResultsHTML()
   fileOut.println("</html>");
   fileOut.close();
 
-  //#ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_VERBOSE
   Serial.println("Done writing, readback");
   fileIn = LittleFS.open("/py_res.html", FILE_READ);
   Serial.println("/py_res.html");
@@ -2814,7 +2813,7 @@ void WriteResultsHTML()
   }
   Serial.println("Done");
   fileIn.close();
-  //#endif
+  #endif
 
 }
 //
