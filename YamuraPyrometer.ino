@@ -1463,8 +1463,6 @@ void MeasureAllTireTemps()
   }
   
   sprintf(outStr, "/py_temps_%d.txt", selectedCar);
-  
-
   AppendFile(SD, outStr, fileLine.c_str());
   // update the HTML file
   textPosition[1] += fontHeight;
@@ -2605,23 +2603,33 @@ void WriteResultsHTML()
   char nameBuf[128];
   //htmlStr = "";
   CarSettings currentResultCar;
-  File fileIn;
+  File fileIn;   // data source file
+  File fileOut;  // html results file
   // create a new HTML file
-  //Serial.println("py_res.html header");
+  #ifdef DEBUG_VERBOSE
+  Serial.println("py_res.html header");
+  #endif
   LittleFS.remove("/py_res.html");
-  AppendFile(LittleFS, "/py_res.html", "<!DOCTYPE html>");
-  AppendFile(LittleFS, "/py_res.html", "<html>");
-  AppendFile(LittleFS, "/py_res.html", "<head>");
-  AppendFile(LittleFS, "/py_res.html", "<title>Recording Pyrometer</title>");
-  AppendFile(LittleFS, "/py_res.html", "</head>");
-  AppendFile(LittleFS, "/py_res.html", "<body>");
-  AppendFile(LittleFS, "/py_res.html", "<h1>Recorded Results</h1>");
-  AppendFile(LittleFS, "/py_res.html", "<p>");
-  AppendFile(LittleFS, "/py_res.html", "<table border=\"1\">");
-  AppendFile(LittleFS, "/py_res.html", "<tr>");
-  AppendFile(LittleFS, "/py_res.html", "<th>Date/Time</th>");
-  AppendFile(LittleFS, "/py_res.html", "<th>Car/Driver</th>");
-  AppendFile(LittleFS, "/py_res.html", "</tr>");
+  fileOut = LittleFS.open("/py_res.html", FILE_WRITE);
+  if(!fileOut)
+  {
+    Serial.println("failed to open data HTML file /py_res.html");
+    return;
+  }
+
+  fileOut.println("<!DOCTYPE html>");
+  fileOut.println("<html>");
+  fileOut.println("<head>");
+  fileOut.println("<title>Recording Pyrometer</title>");
+  fileOut.println("</head>");
+  fileOut.println("<body>");
+  fileOut.println("<h1>Recorded Results</h1>");
+  fileOut.println("<p>");
+  fileOut.println("<table border=\"1\">");
+  fileOut.println("<tr>");
+  fileOut.println("<th>Date/Time</th>");
+  fileOut.println("<th>Car/Driver</th>");
+  fileOut.println("</tr>");
   float tireMin =  999.9;
   float tireMax = -999.9;
   int rowCount = 0;
@@ -2633,8 +2641,8 @@ void WriteResultsHTML()
     {
       continue;
     }
-    //Serial.print("Reading data file ");
-    //Serial.println(nameBuf);
+    Serial.print("reading data source file ");
+    Serial.println(nameBuf);
     bool outputSubHeader = true;
     while(true)
     {
@@ -2642,32 +2650,32 @@ void WriteResultsHTML()
       // end of file
       if(strlen(buf) == 0)
       {
+        fileIn.close();
         break;
       }
       ParseResult(buf, currentResultCar);
-      //Serial.println("output measurements to py_res.html");
       if(outputSubHeader)
       {
-        AppendFile(LittleFS, "/py_res.html", "<tr>");
-        AppendFile(LittleFS, "/py_res.html", "<td></td>");
-        AppendFile(LittleFS, "/py_res.html", "<td></td>");
+        fileOut.println("<tr>");
+        fileOut.println("<td></td>");
+        fileOut.println("<td></td>");
         for(int t_idx = 0; t_idx < currentResultCar.tireCount; t_idx++)
         {
           for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
           {
             sprintf(buf, "<td>%s-%s</td>", currentResultCar.tireShortName[t_idx], currentResultCar.positionShortName[p_idx]);
-            AppendFile(LittleFS, "/py_res.html", buf);
+            fileOut.println(buf);
           }
         }
-        AppendFile(LittleFS, "/py_res.html", "</tr>");
+        fileOut.println("</tr>");
       }
       outputSubHeader = false;
       rowCount++;
-      AppendFile(LittleFS, "/py_res.html", "		    <tr>");
+      fileOut.println("<tr>");
       sprintf(buf, "<td>%s</td>", currentResultCar.dateTime);
-      AppendFile(LittleFS, "/py_res.html", buf);
+      fileOut.println(buf);
       sprintf(buf, "<td>%s</td>", currentResultCar.carName);
-      AppendFile(LittleFS, "/py_res.html", buf);
+      fileOut.println(buf);
       for(int t_idx = 0; t_idx < currentResultCar.tireCount; t_idx++)
       {
         tireMin =  999.9;
@@ -2698,48 +2706,100 @@ void WriteResultsHTML()
           {
             sprintf(buf, "<td>%0.2f</td>", /*currentResultCar.positionShortName[p_idx].c_str(),*/ tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
           }
-          AppendFile(LittleFS, "/py_res.html", buf);
+          fileOut.println(buf);
         }
       }
-      AppendFile(LittleFS, "/py_res.html", "</tr>");
+      fileOut.println("</tr>");
 	    //free(currentResultCar.maxTemp);
     }
+    fileIn.close();
   }
   if(rowCount == 0)
   {
     rowCount++;
-    AppendFile(SD, "/py_res.html", "		    <tr>");
+    fileOut.println("<tr>");
     sprintf(buf, "<td>---</td>");
-    AppendFile(SD, "/py_res.html", buf);
+    fileOut.println(buf);
     sprintf(buf, "<td>---</td>");
-    AppendFile(SD, "/py_res.html", buf);
+    fileOut.println(buf);
     for(int t_idx = 0; t_idx < 4; t_idx++)
     {
       tireMin =  999.9;
       tireMax = -999.9;
       sprintf(buf, "<td>---</td>");
-      AppendFile(SD, "/py_res.html", buf);
+      fileOut.println(buf);
       // add cells to file
       for(int p_idx = 0; p_idx < 3; p_idx++)
       {
         sprintf(buf, "<td>---</td>");
-        AppendFile(SD, "/py_res.html", buf);
+        fileOut.println(buf);
       }
     }
-    AppendFile(SD, "/py_res.html", "</tr>");
+    fileOut.println("</tr>");
   }
-  fileIn.close();
+  fileOut.println("</table>");
+  fileOut.println("</p>");
+  fileOut.println("<p>");
+  fileOut.println("<button name=\"home\" type=\"submit\" value=\"home\"><a href=\"/py_main.html\">Home</a></button>");
+  fileOut.println("</p>");
+  // add copy button, raw results text and script
+  fileOut.println("<p>");
+  fileOut.println("<button onclick=\"copyResults()\">Copy data</button>");
+  fileOut.println("</p>");
+  fileOut.println("<p>");
+  fileOut.println("<textarea id=\"rawTextResultsID\" rows=\"20\" cols=\"100\">");
+  rowCount = 0;
+  for (int dataFileCount = 0; dataFileCount < 100; dataFileCount++)
+  {
+    sprintf(nameBuf, "/py_temps_%d.txt", dataFileCount);
+    fileIn = SD.open(nameBuf, FILE_READ);
+    if(!fileIn)
+    {
+      continue;
+    }
+    Serial.print("reading data source file ");
+    Serial.println(nameBuf);
+    bool outputSubHeader = true;
+    while(true)
+    {
+      ReadLine(fileIn, buf);
+      // end of file
+      if(strlen(buf) == 0)
+      {
+        fileIn.close();
+        break;
+      }
+      ParseResult(buf, currentResultCar);
+      fileIn.close();
+      sprintf(buf, "%s\t%s", currentResultCar.dateTime, currentResultCar.carName);
+      fileOut.print(buf);
+      for(int t_idx = 0; t_idx < currentResultCar.tireCount; t_idx++)
+      {
+        // add cells to file
+        for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
+        {
+          sprintf(buf, "\t%lf", tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+          fileOut.print(buf);
+        }
+      }
+      fileOut.println();
+    }
+  }
+  fileOut.println("</textarea>");
+  fileOut.println("</p>");
+  fileOut.println("</body>");
+  fileOut.println("<script>");
+  fileOut.println("function copyResults() {");
+  fileOut.println("var copyText = document.getElementById(\"rawTextResultsID\");");
+  fileOut.println("copyText.select();");
+  fileOut.println("copyText.setSelectionRange(0, 99999);");
+  fileOut.println("navigator.clipboard.writeText(copyText.value);");
+  fileOut.println("}");
+  fileOut.println("</script>");
+  fileOut.println("</html>");
+  fileOut.close();
 
-  AppendFile(LittleFS, "/py_res.html", "</table>");
-  AppendFile(LittleFS, "/py_res.html", "</p>");
-  AppendFile(LittleFS, "/py_res.html", "<p>");
-  AppendFile(LittleFS, "/py_res.html", "<button name=\"home\" type=\"submit\" value=\"home\"><a href=\"/py_main.html\">Home</a></button>");
-  AppendFile(LittleFS, "/py_res.html", "</p>");
-  AppendFile(LittleFS, "/py_res.html", "</body>");
-  AppendFile(LittleFS, "/py_res.html", "</html>");
-
-
-  #ifdef DEBUG_VERBOSE
+  //#ifdef DEBUG_VERBOSE
   Serial.println("Done writing, readback");
   fileIn = LittleFS.open("/py_res.html", FILE_READ);
   Serial.println("/py_res.html");
@@ -2754,7 +2814,7 @@ void WriteResultsHTML()
   }
   Serial.println("Done");
   fileIn.close();
-  #endif
+  //#endif
 
 }
 //
