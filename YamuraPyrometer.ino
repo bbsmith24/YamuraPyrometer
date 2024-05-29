@@ -451,6 +451,7 @@ void setup()
           {
             cars = static_cast<CarSettings*>(mem);
           }
+          cars[carCount - 1].carID = maxCarID;
           strcpy(cars[carCount - 1].carName, "-");
           cars[carCount - 1].tireCount = 4;
           cars[carCount - 1].positionCount = 3;
@@ -609,6 +610,9 @@ void SelectCarMenu()
   for(int idx = 0; idx < carCount; idx++)
   {
     carsMenu[idx].description = cars[idx].carName;
+    carsMenu[idx].description += " (ID: ";
+    carsMenu[idx].description += cars[idx].carID;
+    carsMenu[idx].description += ")";
     carsMenu[idx].result = idx; 
   }
   selectedCar = MenuSelect(deviceSettings.fontPoints, carsMenu, carCount, 0); 
@@ -692,7 +696,7 @@ void DisplaySelectedResultsMenu(fs::FS &fs, const char * path)
     ReadLine(file, buf);
   } 
   file.close();
-  ParseMeasurementFile(buf, currentResultCar);
+  ReadMeasurementFile(buf, currentResultCar);
   DisplayAllTireTemps(currentResultCar);
 }
 //
@@ -1289,6 +1293,10 @@ void ReadCarSetupFile(fs::FS &fs, const char * path)
   int maxPositions = 0;
   for(int carIdx = 0; carIdx < carCount; carIdx++)
   {
+    // read ID
+    ReadLine(file, buf);
+    cars[carIdx].carID = atoi(buf);
+    maxCarID = maxCarID > cars[carIdx].carID ? maxCarID : cars[carIdx].carID;
     // read name
     ReadLine(file, buf);
     strcpy(cars[carIdx].carName, buf);
@@ -1341,6 +1349,8 @@ void WriteCarSetupFile(fs::FS &fs, const char * path)
   file.println(buf);            // number of cars
   for(int carIdx = 0; carIdx < carCount; carIdx++)
   {
+    maxCarID = maxCarID > cars[carIdx].carID ? maxCarID : cars[carIdx].carID;
+    file.println(cars[carIdx].carID);    // carID
     file.println(cars[carIdx].carName);    // car
     sprintf(buf, "%d", cars[carIdx].tireCount);
     file.println(buf);
@@ -1805,6 +1815,8 @@ void WriteDeviceSetupHTML(fs::FS &fs, const char * path)
 void WriteResultsHTML()
 {
   char buf[512];
+  char outStr[512];
+  char tmpStr[512];
   char nameBuf[128];
   CarSettings currentResultCar;
   File fileIn;   // data source file
@@ -1837,6 +1849,7 @@ void WriteResultsHTML()
   float tireMin =  999.9;
   float tireMax = -999.9;
   int rowCount = 0;
+  bool outputSubHeader = true;
   for (int dataFileCount = 0; dataFileCount < 100; dataFileCount++)
   {
     sprintf(nameBuf, "/py_temps_%d.txt", dataFileCount);
@@ -1845,7 +1858,7 @@ void WriteResultsHTML()
     {
       continue;
     }
-    bool outputSubHeader = true;
+    outputSubHeader = true;
     while(true)
     {
       ReadLine(fileIn, buf);
@@ -1855,7 +1868,7 @@ void WriteResultsHTML()
         fileIn.close();
         break;
       }
-      ParseMeasurementFile(buf, currentResultCar);
+      ReadMeasurementFile(buf, currentResultCar);
       if(outputSubHeader)
       {
         fileOut.println("<tr>");
@@ -1959,7 +1972,7 @@ void WriteResultsHTML()
     {
       continue;
     }
-    bool outputSubHeader = true;
+    outputSubHeader = true;
     while(true)
     {
       ReadLine(fileIn, buf);
@@ -1969,21 +1982,35 @@ void WriteResultsHTML()
         fileIn.close();
         break;
       }
-      ParseMeasurementFile(buf, currentResultCar);
-      fileIn.close();
-      sprintf(buf, "%s\t%s", currentResultCar.dateTime, currentResultCar.carName);
-      fileOut.print(buf);
+      ReadMeasurementFile(buf, currentResultCar);
+      if(outputSubHeader)
+      {
+        sprintf(outStr, "\t%s", currentResultCar.carName);
+        for(int tireIdx = 0; tireIdx < currentResultCar.tireCount; tireIdx++)
+        {
+          for(int posIdx = 0; posIdx < currentResultCar.positionCount; posIdx++)
+          {
+            sprintf(tmpStr, "\t%s-%s", currentResultCar.tireShortName[tireIdx], currentResultCar.positionShortName[posIdx]);
+            strcat(outStr, tmpStr);
+          }
+        }
+        fileOut.println(outStr);
+        outputSubHeader = false;
+      }
+      sprintf(outStr, "%s\t%s", currentResultCar.dateTime, currentResultCar.carName);
       for(int t_idx = 0; t_idx < currentResultCar.tireCount; t_idx++)
       {
         // add cells to file
         for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
         {
-          sprintf(buf, "\t%lf", tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
-          fileOut.print(buf);
+          sprintf(tmpStr, "\t%lf", tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+          strcat(outStr, tmpStr);
         }
       }
-      fileOut.println();
+      fileOut.println(outStr);
+      rowCount++;
     }
+    fileIn.close();
   }
   fileOut.println("</textarea>");
   fileOut.println("</p>");
@@ -2018,9 +2045,60 @@ void WriteResultsHTML()
 
 }
 //
+// write current measurement to by car results file
+// (easier than trying to sore the results while writing the HTML....)
+//
+void WriteMeasurementFile()
+{
+  char outStr[255];
+  #ifdef HAS_RTC
+  String curTimeStr;
+  curTimeStr = GetStringTime();
+  strcpy(cars[selectedCar].dateTime, curTimeStr.c_str());
+  curTimeStr += " ";
+  curTimeStr += GetStringDate();
+  sprintf(outStr, "%s;%s;%d;%d", curTimeStr.c_str(), 
+                                 cars[selectedCar].carName,
+                                 cars[selectedCar].tireCount, 
+                                 cars[selectedCar].positionCount);
+  #else
+  sprintf(outStr, "%d;%s;%d;%d", millis(), 
+                                 cars[selectedCar].carName, 
+                                 cars[selectedCar].tireCount, 
+                                 cars[selectedCar].positionCount);
+  #endif
+  // find file to write
+  String fileLine = outStr;
+  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  {
+    for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
+    {
+      fileLine += ';';
+      fileLine += tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
+    }
+  }
+  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  {
+    fileLine += ';';
+    fileLine += cars[selectedCar].tireShortName[idxTire];
+  }
+  for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
+  {
+    fileLine += ';';
+    fileLine += cars[selectedCar].positionShortName[idxPosition];
+  }
+  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  {
+    fileLine += ';';
+    fileLine += cars[selectedCar].maxTemp[idxTire];
+  }
+  sprintf(outStr, "/py_temps_%d.txt", cars[selectedCar].carID);
+  AppendFile(SD, outStr, fileLine.c_str());
+}
+//
 // parse measurement file (single read of all tires/positions)
 //
-void ParseMeasurementFile(char buf[], CarSettings &currentResultCar)
+void ReadMeasurementFile(char buf[], CarSettings &currentResultCar)
 {
   int tokenIdx = 0;
   int measureIdx = 0;
@@ -2688,58 +2766,13 @@ void MeasureAllTireTemps()
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
   // location of text
   int textPosition[2] = {5, 0};
-
   tftDisplay.drawString("Done", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   tftDisplay.drawString("Storing results...", textPosition[0], textPosition[1], GFXFF);
-    // done, copy local to global
-  #ifdef HAS_RTC
-  String curTimeStr;
-  curTimeStr = GetStringTime();
-  strcpy(cars[selectedCar].dateTime, curTimeStr.c_str());
-  curTimeStr += " ";
-  curTimeStr += GetStringDate();
-  sprintf(outStr, "%s;%s;%d;%d", curTimeStr.c_str(), 
-                                 cars[selectedCar].carName,
-                                 cars[selectedCar].tireCount, 
-                                 cars[selectedCar].positionCount);
-  #else
-  sprintf(outStr, "%d;%s;%d;%d", millis(), 
-                                 cars[selectedCar].carName, 
-                                 cars[selectedCar].tireCount, 
-                                 cars[selectedCar].positionCount);
-  #endif
-  String fileLine = outStr;
-  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
-  {
-    for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
-    {
-      //tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosinitialSelectition] = currentTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
-      fileLine += ';';
-      fileLine += tireTemps[(idxTire * cars[selectedCar].positionCount) + idxPosition];
-    }
-  }
-  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
-  {
-    fileLine += ';';
-    fileLine += cars[selectedCar].tireShortName[idxTire];
-  }
-  for(int idxPosition = 0; idxPosition < cars[selectedCar].positionCount; idxPosition++)
-  {
-    fileLine += ';';
-    fileLine += cars[selectedCar].positionShortName[idxPosition];
-  }
-  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
-  {
-    fileLine += ';';
-    fileLine += cars[selectedCar].maxTemp[idxTire];
-  }
-  
-  sprintf(outStr, "/py_temps_%d.txt", selectedCar);
-  AppendFile(SD, outStr, fileLine.c_str());
-  // update the HTML file
   textPosition[1] += fontHeight;
-  tftDisplay.drawString("Updating HTML...", textPosition[0], textPosition[1], GFXFF);
+  WriteMeasurementFile();
+  tftDisplay.drawString("Updating results HTML...", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
   WriteResultsHTML();  
 }
 //

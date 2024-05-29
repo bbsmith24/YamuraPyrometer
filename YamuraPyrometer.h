@@ -86,15 +86,16 @@
 // car info structure
 struct CarSettings
 {
-    char carName[64];
-    char dateTime[32];
-    int tireCount;
-    char tireShortName[6][16];
-    char tireLongName[6][32];
-    int positionCount;
-    char positionShortName[6][16];
-    char positionLongName[3][32];
-    float maxTemp[6];
+  int carID;
+  char carName[64];
+  char dateTime[32];
+  int tireCount;
+  char tireShortName[6][16];
+  char tireLongName[6][32];
+  int positionCount;
+  char positionShortName[6][16];
+  char positionLongName[3][32];
+  float maxTemp[6];
 };
 struct MenuChoice
 {
@@ -153,6 +154,7 @@ TFT_eSPI tftDisplay = TFT_eSPI();
 int fontHeight;
 
 int carCount = 0;
+int maxCarID = 0;
 int selectedCar = 0;
 int carSetupIdx = 0;
 int tireIdx = 0;
@@ -195,7 +197,8 @@ void ReadDeviceSetupFile(fs::FS &fs, const char * path);
 void WriteDeviceSetupFile(fs::FS &fs, const char * path);
 void WriteDeviceSetupHTML(fs::FS &fs, const char * path);
 void WriteResultsHTML();
-void ParseMeasurementFile(char buf[], CarSettings &currentResultCar);
+void ReadMeasurementFile(char buf[], CarSettings &currentResultCar);
+void WriteMeasurementFile();
 
 // measure and display tire temps, TFT specific functions
 int MeasureTireTemps(int tire);
