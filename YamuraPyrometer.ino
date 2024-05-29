@@ -40,7 +40,6 @@ void setup()
   buttons[0].buttonPin = 12;
   buttons[1].buttonPin = 14;
   buttons[2].buttonPin = 26;
-  //buttons[3].buttonPin = 27;
   // set up tft display
   tftDisplay.init();
   tftDisplay.invertDisplay(false);
@@ -71,7 +70,7 @@ void setup()
   delay(5000);
 
   #ifdef HAS_THERMO
-  tempSensor.begin();       // Uses the default address (0x60) for SparkFun Thermocouple Amplifier
+  tempSensor.begin();       // Uses the default address for the Thermocouple Amplifier
   if(tempSensor.isConnected())
   {
     #ifdef DEBUG_VERBOSE
@@ -232,10 +231,10 @@ void setup()
   #endif
 
   ReadDeviceSetupFile(SD,  "/py_set.txt");
-  WriteDeviceSetupHTML(/*SD*/LittleFS, "/py_set.html");
+  WriteDeviceSetupHTML(LittleFS, "/py_set.html");
 
   ReadCarSetupFile(SD,  "/py_cars.txt");
-  WriteCarSetupHTML(/*SD*/LittleFS, "/py_cars.html", carSetupIdx);
+  WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
 
   #ifdef HAS_RTC
   // get time from RTC
@@ -256,10 +255,10 @@ void setup()
     #ifdef DEBUG_VERBOSE
     Serial.println("HTTP_GET, send /py_main.html from LittleFS");
     #endif
-    request->send(/*SD*/LittleFS, "/py_main.html", "text/html");
+    request->send(LittleFS, "/py_main.html", "text/html");
   });
   
-  server.serveStatic("/", /*SD*/LittleFS, "/");
+  server.serveStatic("/", LittleFS, "/");
 
   server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) 
   {
@@ -363,7 +362,7 @@ void setup()
         strcpy(tempDevice.pass, p->value().c_str());
         continue;
       }
-      // bool tempUnits = false; // true for C, false for F
+      // true for C, false for F
       if (strcmp(p->name().c_str(), "units_id") == 0)
       {
         tempDevice.tempUnits = false;
@@ -379,7 +378,7 @@ void setup()
         }
         continue;
       }
-      // int screenRotation = 1; // 1 = R, 0 = L
+      // screenRotation  1 = R, 0 = L
       if (strcmp(p->name().c_str(), "orientation_id") == 0)
       {
         tempDevice.screenRotation = 1;
@@ -389,7 +388,7 @@ void setup()
         }
         continue;
       }
-      // bool is12Hour = true;   // true for 12 hour clock, false for 24 hour clock
+      // is12Hour true for 12 hour clock, false for 24 hour clock
       if (strcmp(p->name().c_str(), "clock_id") == 0)
       {
         tempDevice.is12Hour = true;
@@ -407,7 +406,6 @@ void setup()
         }
         continue;
       }
-      // int fontPoints = 12;    // size of font to use for display
       if (strcmp(p->name().c_str(), "fontsize_id") == 0)
       {
         tempDevice.fontPoints = atoi(p->value().c_str());
@@ -440,7 +438,7 @@ void setup()
             strcpy(cars[carSetupIdx].positionShortName[posIdx], tempCar.positionShortName[posIdx]);
           }
           WriteCarSetupFile(SD, "/py_cars.txt");
-          WriteCarSetupHTML(/*SD*/LittleFS, "/py_cars.html", carSetupIdx);
+          WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
         }
         else if ((strcmp(p->name().c_str(), "new") == 0))
         {
@@ -475,7 +473,7 @@ void setup()
           strcpy(cars[carCount - 1].positionShortName[2], "-");
           strcpy(cars[carCount - 1].positionLongName[2], "-");
           WriteCarSetupFile(SD, "/py_cars.txt");
-          WriteCarSetupHTML(/*SD*/LittleFS, "/py_cars.html", carSetupIdx);
+          WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
         }
         else if ((strcmp(p->name().c_str(), "delete") == 0))
         {
@@ -490,22 +488,22 @@ void setup()
             cars = static_cast<CarSettings*>(mem);
           }
           WriteCarSetupFile(SD, "/py_cars.txt");
-          WriteCarSetupHTML(/*SD*/LittleFS, "/py_cars.html", carSetupIdx);
+          WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
         }
         // buttons
         if (strcmp(p->name().c_str(), "next") == 0)
         {
           carSetupIdx = carSetupIdx + 1 < carCount ? carSetupIdx + 1 : carCount - 1;
-          WriteCarSetupHTML(/*SD*/LittleFS, "/py_cars.html", carSetupIdx);
-          request->send(/*SD*/LittleFS, "/py_cars.html", "text/html");
+          WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+          request->send(LittleFS, "/py_cars.html", "text/html");
         }
         if (strcmp(p->name().c_str(), "prior") == 0)
         {
           carSetupIdx = carSetupIdx - 1 >= 0 ? carSetupIdx - 1 : 0;
-          WriteCarSetupHTML(/*SD*/LittleFS, "/py_cars.html", carSetupIdx);
-          request->send(/*SD*/LittleFS, "/py_cars.html", "text/html");
+          WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+          request->send(LittleFS, "/py_cars.html", "text/html");
         }
-        request->send(/*SD*/LittleFS, "/py_cars.html", "text/html");
+        request->send(LittleFS, "/py_cars.html", "text/html");
       }
       else if (pageSource == 2)
       {
@@ -519,13 +517,13 @@ void setup()
           deviceSettings.is12Hour = tempDevice.is12Hour;
           deviceSettings.fontPoints = tempDevice.fontPoints;
           WriteDeviceSetupFile(SD, "/py_set.txt");
-          WriteDeviceSetupHTML(/*SD*/LittleFS, "/py_set.html");
-          request->send(/*SD*/LittleFS, "/py_set.html", "text/html");
+          WriteDeviceSetupHTML(LittleFS, "/py_set.html");
+          request->send(LittleFS, "/py_set.html", "text/html");
         }
       }
       else
       {
-        request->send(/*SD*/LittleFS, "/py_main.html", "text/html");
+        request->send(LittleFS, "/py_main.html", "text/html");
       }
     }
   });
@@ -1317,8 +1315,6 @@ void ReadCarSetupFile(fs::FS &fs, const char * path)
     // read measurement count and create arrays
     ReadLine(file, buf);
     cars[carIdx].positionCount = atoi(buf);
-    //cars[carIdx].positionShortName = new String[cars[carIdx].positionCount];
-    //cars[carIdx].positionLongName = new String[cars[carIdx].positionCount];
     maxPositions = maxPositions > cars[carIdx].positionCount ? maxPositions : cars[carIdx].positionCount;
     // read tire short and long names
     for(int positionIdx = 0; positionIdx < cars[carIdx].positionCount; positionIdx++)
@@ -1376,7 +1372,7 @@ void WriteCarSetupFile(fs::FS &fs, const char * path)
   }
   file.close();
   
-  //#ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_VERBOSE
   Serial.println("Done writing, readback");
   file = fs.open(path, FILE_READ);
   Serial.println(path);
@@ -1391,7 +1387,7 @@ void WriteCarSetupFile(fs::FS &fs, const char * path)
   }
   Serial.println("Done");
   file.close();
-  //#endif
+  #endif
 }
 //
 // write car settings to HTML for web interface
@@ -1469,7 +1465,7 @@ void WriteCarSetupHTML(fs::FS &fs, const char * path, int carIdx)
     }
     else
     {
-      sprintf(buf, "<div>");//<label for=\"tire%d_full_id\"></label>", tireIdx);
+      sprintf(buf, "<div>");
     }
     file.println(buf);
     if(tireIdx < cars[carIdx].tireCount)
@@ -1568,7 +1564,7 @@ void WriteCarSetupHTML(fs::FS &fs, const char * path, int carIdx)
     file.println(buf);
     file.println("</div>");
   }
-  file.println("<\table>");
+  file.println("</table>");
   file.println("<p>");
   file.println("<div>");
   file.println("<h3>Actions</h3>");
@@ -1895,7 +1891,6 @@ void WriteResultsHTML()
       {
         tireMin =  999.9;
         tireMax = -999.9;
-        //sprintf(buf, "<td>%s</td>", currentResultCar.tireShortName[t_idx].c_str());
         // get min/max temps
         for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
         {
@@ -1907,25 +1902,24 @@ void WriteResultsHTML()
         {
           if(tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] >= currentResultCar.maxTemp[t_idx])
           {
-            sprintf(buf, "<td bgcolor=\"red\">%0.2f</td>", /*currentResultCar.positionShortName[p_idx].c_str(),*/ tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+            sprintf(buf, "<td bgcolor=\"red\">%0.2f</td>", tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
           }
           else if(tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] <= tireMin)
           {
-            sprintf(buf, "<td bgcolor=\"cyan\">%0.2f</td>", /*currentResultCar.positionShortName[p_idx].c_str(),*/ tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+            sprintf(buf, "<td bgcolor=\"cyan\">%0.2f</td>", tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
           }
           else if (tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] == tireMax)
           {
-            sprintf(buf, "<td bgcolor=\"yellow\">%0.2f</td>", /*currentResultCar.positionShortName[p_idx].c_str(),*/ tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+            sprintf(buf, "<td bgcolor=\"yellow\">%0.2f</td>", tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
           }
           else
           {
-            sprintf(buf, "<td>%0.2f</td>", /*currentResultCar.positionShortName[p_idx].c_str(),*/ tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+            sprintf(buf, "<td>%0.2f</td>", tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
           }
           fileOut.println(buf);
         }
       }
       fileOut.println("</tr>");
-	    //free(currentResultCar.maxTemp);
     }
     fileIn.close();
   }
@@ -2112,22 +2106,6 @@ void ReadMeasurementFile(char buf[], CarSettings &currentResultCar)
   int maxTempRange[2] = {99, 99};
   char* token;
   // parse the current line and add to a measurment structure for display
-  // buf contains the line, now tokenize it
-  // format is:
-  // date/time car tireCnt positionCnt measurements tireShortNames positionShortNames (tsv)
-  // structures to hold data
-  // car info structure
-  // struct CarSettings
-  // {
-  //     String carName;
-  //     int tireCount;
-  //     String* tireShortName;
-  //     String* tireLongName;
-  //     int positionCount;
-  //     String* positionShortName;
-  //     String* positionLongName;
-  // };
-  // CarSettings* cars;
   token = strtok(buf, ";");
   while(token != NULL)
   {
@@ -2146,25 +2124,20 @@ void ReadMeasurementFile(char buf[], CarSettings &currentResultCar)
     else if(tokenIdx == 2)
     {
       currentResultCar.tireCount = atoi(token);
-      //currentResultCar.tireShortName = new String[currentResultCar.tireCount];
-      //currentResultCar.tireLongName = new String[currentResultCar.tireCount];
-      //currentResultCar.maxTemp = (float*)calloc(currentResultCar.tireCount, sizeof(float));
     }
     // 3 - position count
     else if(tokenIdx == 3)
     {
       currentResultCar.positionCount = atoi(token);
-      //currentResultCar.positionShortName = new String[currentResultCar.positionCount];
-      //currentResultCar.positionLongName = new String[currentResultCar.positionCount];
       tempCnt = currentResultCar.tireCount * currentResultCar.positionCount;
-      measureRange[0]  = tokenIdx + 1;  // measurements start at next token                                   // >= 5
-      measureRange[1]  = measureRange[0] +  (currentResultCar.tireCount *  currentResultCar.positionCount) - 1;   // < 5 + 4*13 (17)
-      tireNameRange[0] = measureRange[1];                                                                     // >= 17
-      tireNameRange[1] = tireNameRange[0] + currentResultCar.tireCount;                                       // < 17 + 4 (21)
-      posNameRange[0]  = tireNameRange[1];                                                                    // >= 21
-      posNameRange[1]  = posNameRange[0] + currentResultCar.positionCount;                                    // < 21 + 3 (24)
-      maxTempRange[0]  = posNameRange[1];                                                                    // >= 21
-      maxTempRange[1]  = maxTempRange[0] + currentResultCar.tireCount;                                    // < 21 + 3 (24)
+      measureRange[0]  = tokenIdx + 1;  // measurements start at next token
+      measureRange[1]  = measureRange[0] +  (currentResultCar.tireCount *  currentResultCar.positionCount) - 1;
+      tireNameRange[0] = measureRange[1];                                                                     
+      tireNameRange[1] = tireNameRange[0] + currentResultCar.tireCount;                                       
+      posNameRange[0]  = tireNameRange[1];                                                                    
+      posNameRange[1]  = posNameRange[0] + currentResultCar.positionCount;                                    
+      maxTempRange[0]  = posNameRange[1];                                                                    
+      maxTempRange[1]  = maxTempRange[0] + currentResultCar.tireCount;                                   
     }
     // tire temps
     else if((tokenIdx >= measureRange[0]) && (tokenIdx <= measureRange[1]))
@@ -2218,11 +2191,10 @@ int MeasureTireTemps(int tireIdx)
   {
     tireTemps[(tireIdx * cars[selectedCar].positionCount) + idx] = 0.0;
   }
-  //ResetTempStable();
   armed = false;
   unsigned long priorTime = millis();
   unsigned long curTime = millis();
-  // text position on OLED screen
+  // text position on screen
   // measuring until all positions are measured
   bool drawStars = true;
   while(measIdx < cars[selectedCar].positionCount)
@@ -2266,7 +2238,7 @@ int MeasureTireTemps(int tireIdx)
       return rVal;
     }
     // if not armed continue
-    if(!armed)// && (curTime - priorTime) < 250)
+    if(!armed)
     {
       curTime = millis();
       continue;
@@ -2333,7 +2305,6 @@ void InstantTemp()
       priorTime = curTime;
       // read temp
       #ifdef HAS_THERMO
-      //instant_temp = tempSensor.readTempC();//tempSensor.getThermocoupleTemp(deviceSettings.tempUnits); // false for F, true or empty for C
       instant_temp = tempSensor.getThermocoupleTemp();
       if(deviceSettings.tempUnits == 0)
       {
@@ -2762,7 +2733,7 @@ void MeasureAllTireTemps()
   }
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
-  SetFont(deviceSettings.fontPoints);// <= 12 ? deviceSettings.fontPoints : 12);
+  SetFont(deviceSettings.fontPoints);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
   // location of text
   int textPosition[2] = {5, 0};
@@ -2792,12 +2763,12 @@ int GetNextTire(int selTire, int nextDirection)
     {
       selTire = 0;
     }
-	// stop on 'done'
+  	// stop on 'done'
     if(selTire == cars[selectedCar].tireCount)
     {
       break;
     }
-	// stop on first measure of selTire == 0.0 (never measured)
+  	// stop on first measure of selTire == 0.0 (never measured)
     if (tireTemps[(selTire * cars[selectedCar].positionCount)] == 0.0)
     {
       break;
@@ -2818,9 +2789,6 @@ int GetNextTire(int selTire, int nextDirection)
 //
 void DrawCellText(int row, int col, char* outStr, uint16_t textColor, uint16_t backColor)
 {
-  //SetFont(deviceSettings.fontPoints);
-  //tftDisplay.setTextDatum(TL_DATUM);
-  //strcat(outStr, " ");
   String blankStr = "00000";
   tftDisplay.setTextColor(backColor, backColor);
   if(strlen(outStr) > 1)
