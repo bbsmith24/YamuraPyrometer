@@ -34,7 +34,8 @@ void setup()
   char outStr[128];
   Serial.begin(115200);
   // location of text
-  int textPosition[2] = {5, 0};
+  textPosition[0] = 5;
+  textPosition[1] = 0;
 
   // user input buttons
   buttons[0].buttonPin = 12;
@@ -69,74 +70,10 @@ void setup()
   Wire.setClock(100000);
   delay(5000);
 
-  #ifdef HAS_THERMO
-  tempSensor.begin();       // Uses the default address for the Thermocouple Amplifier
-  if(tempSensor.isConnected())
-  {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("Thermocouple will acknowledge!");
-    #endif
-  }
-  else 
-  {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("Thermocouple did not acknowledge! Freezing.");
-    #endif
-    tftDisplay.drawString("Thermocouple did not acknowledge", textPosition[0], textPosition[1], GFXFF);
-    textPosition[1] += fontHeight;
-    while(1); //hang forever
-  }
-  //change the thermocouple type being used
-  #ifdef DEBUG_VERBOSE
-  Serial.println("Setting Thermocouple Type!");
-  #endif
-  tempSensor.setThermocoupleType(TYPE_K);
-   //make sure the type was set correctly!
-  switch(tempSensor.getThermocoupleType())
-  {
-    case TYPE_K:
-      sprintf(outStr,"Thermocouple OK (Type K)");
-      break;
-    case TYPE_J:
-      sprintf(outStr,"Thermocouple set failed (Type J");
-      break;
-    case TYPE_T:
-      sprintf(outStr,"Thermocouple set failed (Type T");
-      break;
-    case TYPE_N:
-      sprintf(outStr,"Thermocouple set failed (Type N");
-      break;
-    case TYPE_S:
-      sprintf(outStr,"Thermocouple set failed (Type S");
-      break;
-    case TYPE_E:
-      sprintf(outStr,"Thermocouple set failed (Type E");
-      break;
-    case TYPE_B:
-      sprintf(outStr,"Thermocouple set failed (Type B");
-      break;
-    case TYPE_R:
-      sprintf(outStr,"Thermocouple set failed (Type R");
-      break;
-    default:
-      sprintf(outStr,"Thermocouple set failed (unknown type");
-      break;
-  }
-  #ifdef DEBUG_VERBOSE
-  Serial.println(outStr);
-  #endif
-  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
-  #else
-    tftDisplay.drawString("No thermocouple - random test values", textPosition[0], textPosition[1], GFXFF);
-    Serial.println("No thermocouple - random test values");
-  #endif
-  textPosition[1] += fontHeight;
-  for(int idx = 0; idx < TEMP_BUFFER; idx++)
-  {
-    tempValues[idx] = -100.0;
-  }
+  Thermo_Setup();
+
   #ifdef HAS_RTC
-  while (!rtc.begin()) 
+  while (!RTC_Setup()) 
   {
     #ifdef DEBUG_VERBOSE
     Serial.println("Couldn't find RTC...retry");
@@ -148,37 +85,8 @@ void setup()
   #ifdef SET_TO_SYSTEM_TIME
   Serial.println("Set date and time to system");
   delay(5000);
-  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  RTC_SetDateTime(DateTime(F(__DATE__), F(__TIME__)));
   #endif
-
-  if (rtc.lostPower()) 
-  {
-    delay(5000);
-    #ifdef DEBUG_VERBOSE
-    Serial.println("RTC is NOT initialized, let's set the time!");
-    #endif
-    // When time needs to be set on a new device, or after a power loss, the
-    // following line sets the RTC to the date & time this sketch was compiled
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    // This line sets the RTC with an explicit date & time, for example to set
-    // January 21, 2014 at 3am you would call:
-    // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
-    //
-    // Note: allow 2 seconds after inserting battery or applying external power
-    // without battery before calling adjust(). This gives the PCF8523's
-    // crystal oscillator time to stabilize. If you call adjust() very quickly
-    // after the RTC is powered, lostPower() may still return true.
-  }
-  #ifdef DEBUG_VERBOSE
-  else
-  {
-    Serial.println("RTC initialized, time already set");
-  }
-  #endif
-  // When the RTC was stopped and stays connected to the battery, it has
-  // to be restarted by clearing the STOP bit. Let's do this to ensure
-  // the RTC is running.
-  rtc.start();
   tftDisplay.drawString("RTC OK", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   #endif
@@ -238,7 +146,7 @@ void setup()
 
   #ifdef HAS_RTC
   // get time from RTC
-  sprintf(outStr, "%s %s", GetStringTime().c_str(), GetStringDate().c_str());
+  sprintf(outStr, "%s %s", RTC_GetStringTime().c_str(), RTC_GetStringDate().c_str());
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   #endif
@@ -877,7 +785,8 @@ int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSel
 {
   char outStr[256];
   // location of text
-  int textPosition[2] = {5, 0};
+  textPosition[0] = 5;
+  textPosition[1] = 0;
   unsigned long currentMillis = millis();
   // find initial selection
   int selection = initialSelect;
@@ -989,7 +898,8 @@ void SetDateTime()
   char outStr[256];
   int timeVals[8] = {0, 0, 0, 0, 0, 0, 0, 0};  // date, month, year, day, hour, min, sec, 100ths
   // location of text
-  int textPosition[2] = {5, 0};
+  textPosition[0] = 5;
+  textPosition[1] = 0;
   int setIdx = 0;
   unsigned long curTime = millis();
   int delta = 0;
@@ -1001,7 +911,7 @@ void SetDateTime()
   return;
   #endif
   DateTime now;
-  now = rtc.now();
+  now = RTC_GetDateTime();
   int year = now.year();
   int month = now.month();
   int day = now.day();
@@ -1262,9 +1172,9 @@ void SetDateTime()
     timeVals[HOUR] += 12;
   }
 
-  rtc.adjust(DateTime(timeVals[YEAR], timeVals[MONTH], timeVals[DATE], timeVals[HOUR],timeVals[MINUTE],timeVals[SECOND]));
+  RTC_SetDateTime(timeVals[YEAR], timeVals[MONTH], timeVals[DATE], timeVals[HOUR],timeVals[MINUTE],timeVals[SECOND]);
   textPosition[1] += fontHeight * 2;
-  sprintf(outStr,"Set to %s %s", GetStringTime(), GetStringDate());
+  sprintf(outStr,"Set to %s %s", RTC_GetStringTime(), RTC_GetStringDate());
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   SetFont(deviceSettings.fontPoints);
@@ -2047,10 +1957,10 @@ void WriteMeasurementFile()
   char outStr[255];
   #ifdef HAS_RTC
   String curTimeStr;
-  curTimeStr = GetStringTime();
+  curTimeStr = RTC_GetStringTime();
   strcpy(cars[selectedCar].dateTime, curTimeStr.c_str());
   curTimeStr += " ";
-  curTimeStr += GetStringDate();
+  curTimeStr += RTC_GetStringDate();
   sprintf(outStr, "%s;%s;%d;%d", curTimeStr.c_str(), 
                                  cars[selectedCar].carName,
                                  cars[selectedCar].tireCount, 
@@ -2180,7 +2090,8 @@ int MeasureTireTemps(int tireIdx)
 {
   char outStr[512];
   // location of text
-  int textPosition[2] = {5, 0};
+  textPosition[0] = 5;
+  textPosition[1] = 0;
   int row = 0;
   int col = 0;
   bool armed = false;
@@ -2246,11 +2157,7 @@ int MeasureTireTemps(int tireIdx)
     // get stable temp after arming
     row = ((tireIdx / 2) * 2) + 1;
     col = measIdx + ((tireIdx % 2) * 3);
-    #ifdef HAS_THERMO
     tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = GetStableTemp(row, col);
-    #else
-    tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = 100;
-    #endif
     // disarm after stable temp
     armed = false;
     // next position
@@ -2269,13 +2176,14 @@ void InstantTemp()
   char outStr[128];
   float instant_temp = 0.0;
   // location of text
-  int textPosition[2] = {5, 0};
+  textPosition[0] = 5;
+  textPosition[1] = 0;
   randomSeed(100);
   tftDisplay.fillScreen(TFT_BLACK);
   YamuraBanner();
   SetFont(deviceSettings.fontPoints);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
-  sprintf(outStr, "Temperature at %s %s", GetStringTime(), GetStringDate());
+  sprintf(outStr, "Temperature at %s %s", RTC_GetStringTime(), RTC_GetStringDate());
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] +=  fontHeight;
   sprintf(outStr, " ");
@@ -2293,7 +2201,7 @@ void InstantTemp()
       textPosition[1] = 0;
       SetFont(deviceSettings.fontPoints);
       tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
-      sprintf(outStr, "Temperature at %s %s", GetStringTime(), GetStringDate());
+      sprintf(outStr, "Temperature at %s %s", RTC_GetStringTime(), RTC_GetStringDate());
       tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
       textPosition[1] +=  fontHeight;
       sprintf(outStr, " ");
@@ -2304,15 +2212,11 @@ void InstantTemp()
 
       priorTime = curTime;
       // read temp
-      #ifdef HAS_THERMO
-      instant_temp = tempSensor.getThermocoupleTemp();
+      instant_temp = Thermo_GetTemp();
       if(deviceSettings.tempUnits == 0)
       {
         instant_temp = CtoFAbsolute(instant_temp);
       }
-      #else
-      instant_temp = 100.0F;
-      #endif
       sprintf(outStr, "0000.00000");
       tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.textWidth(outStr), fontHeight, TFT_BLACK);
       sprintf(outStr, "%0.2f", instant_temp);
@@ -2463,7 +2367,8 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
   unsigned long curTime = millis();
   unsigned long priorTime = millis();
   // location of text
-  int textPosition[2] = {5, 0};
+  textPosition[0] = 5;
+  textPosition[1] = 0;
   int row = 0;
   int col = 0;
   char outStr[255];
@@ -2736,7 +2641,8 @@ void MeasureAllTireTemps()
   SetFont(deviceSettings.fontPoints);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
   // location of text
-  int textPosition[2] = {5, 0};
+  textPosition[0] = 5;
+  textPosition[1] = 0;
   tftDisplay.drawString("Done", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   tftDisplay.drawString("Storing results...", textPosition[0], textPosition[1], GFXFF);
@@ -2846,16 +2752,7 @@ float GetStableTemp(int row, int col)
   }
   while(true)
   {
-    temperature = tempSensor.getThermocoupleTemp();
-    if (isnan(temperature)) 
-    {
-      return temperature;
-    }
-    // convert to F if required
-    if(deviceSettings.tempUnits == 0)
-    {
-      temperature = CtoFAbsolute(temperature);
-    }
+    temperature = Thermo_GetTemp();
     // draw current temp in cell
     sprintf(outStr, "%0.1F", temperature);
     DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLACK);
@@ -2952,17 +2849,17 @@ float CtoFRelative(float tempC)
 // returns true if time is PM (for 12 hour display)
 // requires RTC
 //
-bool IsPM()
+bool RTC_IsPM()
 {
   DateTime now;
-  now = rtc.now();
+  now = RTC_GetDateTime();
   return now.isPM();
 }
 //
 // get HH:MM:SS from RTC time
 // requires RTC
 //
-String GetStringTime()
+String RTC_GetStringTime()
 {
   bool h12Flag;
   bool pmFlag;
@@ -2970,7 +2867,7 @@ String GetStringTime()
   char buf[512];
   int ampm;
   DateTime now;
-  now = rtc.now();
+  now = RTC_GetDateTime();
   int year = now.year();
   int month = now.month();
   int day = now.day();
@@ -3008,19 +2905,145 @@ String GetStringTime()
 // get MM/DD/YYYY from RTC date
 // requires RTC
 //
-String GetStringDate()
+String RTC_GetStringDate()
 {
   bool century = false;
   String rVal;
   char buf[512];
 	DateTime now;
-  now = rtc.now();
+  now = RTC_GetDateTime();
   int year = now.year();
   int month = now.month();
   int day = now.day();
   sprintf(buf, "%02d/%02d/%02d", month, day, year);
   rVal = buf;
   return rVal;
+}
+//
+// Set date time
+// pass in a year, month, date, hour, minute, second as integer values
+//
+void RTC_SetDateTime(int year, int month, int date, int hour, int minute, int second)
+{
+  rtc.adjust(DateTime(year, month, date, hour, minute, second));
+}
+//
+// Set date time
+// pass in a DateTime structure
+//
+void RTC_SetDateTime(DateTime timeVal)
+{
+  rtc.adjust(timeVal);
+}
+//
+// get time from RTC
+// make it easier to change RTC modules if libraries need
+// different calls
+// return as a DateTime structure
+//
+DateTime RTC_GetDateTime()
+{
+  return rtc.now();
+}
+//
+// any initialization required for RTC module, return TRUE for sucess, FALSE for fail
+//
+bool RTC_Setup()
+{
+  bool rVal = rtc.begin();
+  // When the RTC was stopped and stays connected to the battery, it has
+  // to be restarted by clearing the STOP bit. Let's do this to ensure
+  // the RTC is running.
+  if(rVal) 
+  {
+    rtc.start();
+  };
+  return rVal;
+}
+//
+//
+//
+float Thermo_GetTemp()
+{
+  float temperature = tempSensor.getThermocoupleTemp();
+  if (isnan(temperature)) 
+  {
+    return -100.0F;
+  }
+  // convert to F if required
+  if(deviceSettings.tempUnits == 0)
+  {
+    temperature = CtoFAbsolute(temperature);
+  }
+  return temperature;
+}
+//
+//
+//
+void Thermo_Setup()
+{
+  char outStr[256];
+  tempSensor.begin();       // Uses the default address for the Thermocouple Amplifier
+  if(tempSensor.isConnected())
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Thermocouple will acknowledge!");
+    #endif
+  }
+  else 
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.println("Thermocouple did not acknowledge! Freezing.");
+    #endif
+    tftDisplay.drawString("Thermocouple did not acknowledge", textPosition[0], textPosition[1], GFXFF);
+    textPosition[1] += fontHeight;
+    while(1); //hang forever
+  }
+  //change the thermocouple type being used
+  #ifdef DEBUG_VERBOSE
+  Serial.println("Setting Thermocouple Type!");
+  #endif
+  tempSensor.setThermocoupleType(TYPE_K);
+   //make sure the type was set correctly!
+  switch(tempSensor.getThermocoupleType())
+  {
+    case TYPE_K:
+      sprintf(outStr,"Thermocouple OK (Type K)");
+      break;
+    case TYPE_J:
+      sprintf(outStr,"Thermocouple set failed (Type J");
+      break;
+    case TYPE_T:
+      sprintf(outStr,"Thermocouple set failed (Type T");
+      break;
+    case TYPE_N:
+      sprintf(outStr,"Thermocouple set failed (Type N");
+      break;
+    case TYPE_S:
+      sprintf(outStr,"Thermocouple set failed (Type S");
+      break;
+    case TYPE_E:
+      sprintf(outStr,"Thermocouple set failed (Type E");
+      break;
+    case TYPE_B:
+      sprintf(outStr,"Thermocouple set failed (Type B");
+      break;
+    case TYPE_R:
+      sprintf(outStr,"Thermocouple set failed (Type R");
+      break;
+    default:
+      sprintf(outStr,"Thermocouple set failed (unknown type");
+      break;
+  }
+  #ifdef DEBUG_VERBOSE
+  Serial.println(outStr);
+  #endif
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
+  for(int idx = 0; idx < TEMP_BUFFER; idx++)
+  {
+    tempValues[idx] = -100.0;
+  }
 }
 //
 // check all buttons for new press or release

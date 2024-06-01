@@ -6,6 +6,12 @@
   License: This code is public domain but you buy me a beer if you use this and we meet someday (Beerware License).
 
 */
+// select 1 RTC library. Modify RTC_ functions as needed
+#define RTC_8563   // using 8563 RTC
+//#define RTC_3231 // using 3231 RTC
+// select 1 Thermocouple amp library. Modify Thermo_ functions as needed
+#define THERMO_MPC9600 // using MPC9600 thermocouple amp
+//
 #include <Arduino.h>
 #include <WiFi.h>
 #include <AsyncTCP.h>
@@ -16,8 +22,14 @@
 #include "LittleFS.h"
 #include "SD.h"
 #include "SPI.h" 
-#include <SparkFun_MCP9600.h>    // https://github.com/sparkfun/SparkFun_MCP9600_Arduino_Library
+// install correct thermocouple library
+#ifdef THERMO_MPC9600
+#include <SparkFun_MCP9600.h>    // MPC9600 Thermocouple library https://github.com/sparkfun/SparkFun_MCP9600_Arduino_Library
+#endif
+// install correct RTC library
+#ifdef RTC_8563
 #include "RTClib.h"              // PCF8563 RTC library https://github.com/adafruit/RTClib
+#endif
 
 // uncomment for debug to serial monitor (use #ifdef...#endif around debug output prints)
 //#define DEBUG_VERBOSE
@@ -31,8 +43,6 @@
 #define I2C_SCL 22
 // uncomment for RTC module attached
 #define HAS_RTC
-// uncomment for thermocouple module attached (use random values for test if not attached)
-#define HAS_THERMO
 // max menu item count
 #define MAX_MENU_ITEMS 100
 // main menu
@@ -136,13 +146,11 @@ float currentTemps[18];
 // devices
 // thermocouple amplifier
 MCP9600 tempSensor;
-
 // temp values for stabilization calculation
 float tempValues[100];
 
 // rtc
 RTC_PCF8563 rtc;
-
 bool century = false;
 bool h12Flag;
 bool pmFlag;
@@ -152,6 +160,7 @@ String ampmStr[3] = {"am", "pm", "\0"};
 // TFT display
 TFT_eSPI tftDisplay = TFT_eSPI();
 int fontHeight;
+int textPosition[2] = {5, 0};
 
 int carCount = 0;
 int maxCarID = 0;
@@ -219,9 +228,14 @@ void SetFont(int fontSize);
 float CtoFAbsolute(float tempC);
 float CtoFRelative(float tempC);
 // date, time, RTC
-bool IsPM();
-String GetStringTime();
-String GetStringDate();
+bool RTC_IsPM();
+String RTC_GetStringTime();
+String RTC_GetStringDate();
+DateTime RTC_DateTime();
+void RTC_SetDateTime(DateTime timeVal);
+void RTC_SetDateTime(int year, int month, int date, int hour, int minute, int second);
+void Thermo_Setup();
+float Thermo_GetTemp();
 // user input (button presses)
 void CheckButtons(unsigned long curTime);
 // SD and LittleFS file handling
