@@ -124,7 +124,7 @@ void setup()
     tftDisplay.drawString("microSD card mount failed", textPosition[0], textPosition[1], GFXFF);
     while(true);
   }
-  tftDisplay.drawString("microSD initialized", textPosition[0], textPosition[1], GFXFF);
+  tftDisplay.drawString("SD initialized", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   uint8_t cardType = SD.cardType();
   if(cardType == CARD_NONE)
@@ -138,9 +138,13 @@ void setup()
   ListDirectory(SD, "/", 3);
   #endif
 
+  tftDisplay.drawString("Read device setup", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
   ReadDeviceSetupFile(SD,  "/py_set.txt");
   WriteDeviceSetupHTML(LittleFS, "/py_set.html");
 
+  tftDisplay.drawString("Read cars setup", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
   ReadCarSetupFile(SD,  "/py_cars.txt");
   WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
 
@@ -152,11 +156,13 @@ void setup()
   #endif
   deviceState = DISPLAY_MENU;
 
+  tftDisplay.drawString("Write results to HTML", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
   WriteResultsHTML();
+
   WiFi.softAP(deviceSettings.ssid, deviceSettings.pass);
   IP = WiFi.softAPIP();
-  
-    // Web Server Root URL
+  // Web Server Root URL
   Serial.println("starting webserver");
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
   {
@@ -167,7 +173,6 @@ void setup()
   });
   
   server.serveStatic("/", LittleFS, "/");
-
   server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) 
   {
     #ifdef DEBUG_VERBOSE
@@ -436,17 +441,17 @@ void setup()
     }
   });
   server.begin();
+  
   sprintf(outStr, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   sprintf(outStr, "Password %s", deviceSettings.pass);
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
-
-  RotateDisplay(deviceSettings.screenRotation != 1);
   SetupTireMeasureGrid(deviceSettings.fontPoints);
 
   delay(5000);
+  RotateDisplay(deviceSettings.screenRotation != 1);
 }
 //
 // display menu associated with current device state
