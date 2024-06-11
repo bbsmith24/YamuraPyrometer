@@ -1,7 +1,7 @@
 /*
   YamuraLog Recording Tire Pyrometer
   By: Brian Smith
-  Yamura Electronics Division
+  Yamura Motors LLC
   Date: September 2023
   License: This code is public domain but you buy me a beer if you use this and we meet someday (Beerware License).
 
@@ -10,8 +10,8 @@
               menu down/exit tire temp review
               menu up
   ESP32 WROOM-32D Devkit
-  I2C K type thermocouple amplifier MPC9600                         (I2C address 0x60)
-  I2C RTC                                                     (I2C address 0x69)
+  I2C K type thermocouple amplifier I2C address MPC9600 0x60, MPC9601 0x67
+  I2C RTC                           I2C address 0x69 (8563) 0x51 (3231)
   Hosyond 4" TFT/ST7796 SPI Module with SD card reader (8GB is fine, not huge amount of data being stored)
   On/Off switch
   3 NO momentary switches
@@ -44,7 +44,7 @@ void setup()
   // set up tft display
   tftDisplay.init();
   tftDisplay.invertDisplay(false);
-  RotateDisplay(false);  
+  RotateDisplay(true);  
   int w = tftDisplay.width();
   int h = tftDisplay.height();
   textPosition[0] = 5;
@@ -57,7 +57,7 @@ void setup()
   YamuraBanner();
   SetFont(deviceSettings.fontPoints);
   tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
-  tftDisplay.drawString("Yamura Electronics Recording Pyrometer", textPosition[0], textPosition[1], GFXFF);
+  tftDisplay.drawString("Yamura Motors LLC Recording Pyrometer", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   //
   // start I2C
@@ -70,8 +70,7 @@ void setup()
   Wire.setClock(100000);
   delay(5000);
 
-  Thermo_Setup();
-
+  // RTC setup
   #ifdef HAS_RTC
   while (!RTC_Setup()) 
   {
@@ -87,10 +86,19 @@ void setup()
   delay(5000);
   RTC_SetDateTime(DateTime(F(__DATE__), F(__TIME__)));
   #endif
-  tftDisplay.drawString("RTC OK", textPosition[0], textPosition[1], GFXFF);
+  String tmpTimeStr = "RTC OK ";
+  tmpTimeStr += RTC_GetStringTime();
+  tmpTimeStr += " ";
+  tmpTimeStr += RTC_GetStringDate();
+  tftDisplay.drawString(tmpTimeStr.c_str(), textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   #endif
 
+
+  // thermocouple amp setup
+  Thermo_Setup();
+
+  // user buttons setup
   for(int idx = 0; idx < BUTTON_COUNT; idx++)
   {
     pinMode(buttons[idx].buttonPin, INPUT_PULLUP);
@@ -116,13 +124,23 @@ void setup()
   #ifdef DEBUG_VERBOSE
   Serial.println( "initializing microSD" );
   #endif
-  if(!SD.begin(SD_CS))
+  tftDisplay.drawString("Initializing SD card", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
+
+  int failCount = 0;
+  while(!SD.begin(SD_CS))
   {
     #ifdef DEBUG_VERBOSE
     Serial.println("microSD card mount failed");
     #endif
-    tftDisplay.drawString("microSD card mount failed", textPosition[0], textPosition[1], GFXFF);
-    while(true);
+    failCount++;
+    sprintf(outStr, "microSD card mount failed after %d attempts", failCount);
+    tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+    if(failCount > 100)
+    {
+      while(true) { }
+    }
+    delay(1000);
   }
   tftDisplay.drawString("SD initialized", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
@@ -142,11 +160,13 @@ void setup()
   textPosition[1] += fontHeight;
   ReadDeviceSetupFile(SD,  "/py_set.txt");
   WriteDeviceSetupHTML(LittleFS, "/py_set.html");
+  WriteDeviceSetupHTML(SD, "/py_set.html");
 
   tftDisplay.drawString("Read cars setup", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   ReadCarSetupFile(SD,  "/py_cars.txt");
   WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+  WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
 
   #ifdef HAS_RTC
   // get time from RTC
@@ -158,7 +178,8 @@ void setup()
 
   tftDisplay.drawString("Write results to HTML", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
-  WriteResultsHTML();
+  WriteResultsHTML(LittleFS);
+  WriteResultsHTML(SD);
 
   WiFi.softAP(deviceSettings.ssid, deviceSettings.pass);
   IP = WiFi.softAPIP();
@@ -291,11 +312,11 @@ void setup()
         }
         continue;
       }
-      // screenRotation  1 = R, 0 = L
+      // screenRotation  0 = R, 1 = L
       if (strcmp(p->name().c_str(), "orientation_id") == 0)
       {
         tempDevice.screenRotation = 1;
-        if(strcmp(p->value().c_str(), "L") == 0)
+        if(strcmp(p->value().c_str(), "R") == 0)
         {
           tempDevice.screenRotation = 0;
         }
@@ -352,6 +373,7 @@ void setup()
           }
           WriteCarSetupFile(SD, "/py_cars.txt");
           WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+          WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
         }
         else if ((strcmp(p->name().c_str(), "new") == 0))
         {
@@ -387,6 +409,7 @@ void setup()
           strcpy(cars[carCount - 1].positionLongName[2], "-");
           WriteCarSetupFile(SD, "/py_cars.txt");
           WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+          WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
         }
         else if ((strcmp(p->name().c_str(), "delete") == 0))
         {
@@ -402,18 +425,21 @@ void setup()
           }
           WriteCarSetupFile(SD, "/py_cars.txt");
           WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+          WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
         }
         // buttons
         if (strcmp(p->name().c_str(), "next") == 0)
         {
           carSetupIdx = carSetupIdx + 1 < carCount ? carSetupIdx + 1 : carCount - 1;
           WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+          WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
           request->send(LittleFS, "/py_cars.html", "text/html");
         }
         if (strcmp(p->name().c_str(), "prior") == 0)
         {
           carSetupIdx = carSetupIdx - 1 >= 0 ? carSetupIdx - 1 : 0;
           WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+          WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
           request->send(LittleFS, "/py_cars.html", "text/html");
         }
         request->send(LittleFS, "/py_cars.html", "text/html");
@@ -431,6 +457,7 @@ void setup()
           deviceSettings.fontPoints = tempDevice.fontPoints;
           WriteDeviceSetupFile(SD, "/py_set.txt");
           WriteDeviceSetupHTML(LittleFS, "/py_set.html");
+          WriteDeviceSetupHTML(SD, "/py_set.html");
           request->send(LittleFS, "/py_set.html", "text/html");
         }
       }
@@ -451,7 +478,7 @@ void setup()
   SetupTireMeasureGrid(deviceSettings.fontPoints);
 
   delay(5000);
-  RotateDisplay(deviceSettings.screenRotation != 1);
+  RotateDisplay(deviceSettings.screenRotation != 0);
 }
 //
 // display menu associated with current device state
@@ -629,7 +656,7 @@ void ChangeSettingsMenu()
     {
       settingsChoices[SET_FLIPDISPLAY].description = "Switch to Left Hand (invert screen)"; settingsChoices[SET_FLIPDISPLAY].result = SET_FLIPDISPLAY;      
     }
-    else
+    else if(deviceSettings.screenRotation == 0)
     {
       settingsChoices[SET_FLIPDISPLAY].description = "Switch to Right Hand (invert screen)"; settingsChoices[SET_FLIPDISPLAY].result = SET_FLIPDISPLAY;      
     }
@@ -661,7 +688,7 @@ void ChangeSettingsMenu()
         DeleteDataFilesMenu();
         break;
       case SET_FLIPDISPLAY:
-        deviceSettings.screenRotation = deviceSettings.screenRotation == 1 ? 3 : 1;
+        deviceSettings.screenRotation = deviceSettings.screenRotation == 0 ? 1 : 0;
         RotateDisplay(true);
         break;
       case SET_FONTSIZE:
@@ -779,7 +806,7 @@ void DeleteDataFilesMenu(bool verify)
     }
     DeleteFile(SD, "/py_res.html");
     // create the HTML header
-    WriteResultsHTML();
+    WriteResultsHTML(LittleFS);
   }
 }
 //
@@ -1723,7 +1750,7 @@ void WriteDeviceSetupHTML(fs::FS &fs, const char * path)
 //
 // write all results to HTML file for web interface
 //
-void WriteResultsHTML()
+void WriteResultsHTML(fs::FS &fs)
 {
   char buf[512];
   char outStr[512];
@@ -1736,8 +1763,8 @@ void WriteResultsHTML()
   #ifdef DEBUG_VERBOSE
   Serial.println("py_res.html header");
   #endif
-  LittleFS.remove("/py_res.html");
-  fileOut = LittleFS.open("/py_res.html", FILE_WRITE);
+  DeleteFile(fs, "/py_res.html");
+  fileOut = fs.open("/py_res.html", FILE_WRITE);
   if(!fileOut)
   {
     Serial.println("failed to open data HTML file /py_res.html");
@@ -2218,9 +2245,9 @@ void InstantTemp()
       priorTime = curTime;
       // read temp
       instant_temp = Thermo_GetTemp();
-      if(deviceSettings.tempUnits == 0)
+      if(deviceSettings.tempUnits == 1)
       {
-        instant_temp = CtoFAbsolute(instant_temp);
+        instant_temp = FtoCAbsolute(instant_temp);
       }
       sprintf(outStr, "0000.00000");
       tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.textWidth(outStr), fontHeight, TFT_BLACK);
@@ -2655,7 +2682,7 @@ void MeasureAllTireTemps()
   WriteMeasurementFile();
   tftDisplay.drawString("Updating results HTML...", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
-  WriteResultsHTML();  
+  WriteResultsHTML(LittleFS);  
 }
 //
 // move to next tire after measurement of a tire is complete, 
@@ -2715,7 +2742,7 @@ void DrawCellText(int row, int col, char* outStr, uint16_t textColor, uint16_t b
 //
 void RotateDisplay(bool rotateButtons)
 {
-  tftDisplay.setRotation(deviceSettings.screenRotation);
+  tftDisplay.setRotation(deviceSettings.screenRotation == 0 ? 1 : 3);
   tftDisplay.fillScreen(TFT_BLACK);
   if(rotateButtons)
   {
@@ -2747,7 +2774,7 @@ float GetStableTemp(int row, int col)
   {
     for(int idx = 0; idx < 2; idx++)
     {
-      devRange[idx] = CtoFRelative(devRange[idx]);
+      devRange[idx] = FtoCRelative(devRange[idx]);
     }
   }
 
@@ -2801,7 +2828,7 @@ void YamuraBanner()
   int xPos = tftDisplay.width()/2;
   int yPos = tftDisplay.height() - fontHeight/2;
   tftDisplay.setTextDatum(BC_DATUM);
-  tftDisplay.drawString("  Yamura Recording Tire Pyrometer v1.0  ",xPos, yPos, GFXFF);    // Print the font name onto the TFT screen
+  tftDisplay.drawString("  Yamura Motors LLC Recording Pyrometer  ",xPos, yPos, GFXFF);    // Print the font name onto the TFT screen
   tftDisplay.setTextDatum(TL_DATUM);
 }
 //
@@ -2849,6 +2876,20 @@ float CtoFAbsolute(float tempC)
 float CtoFRelative(float tempC)
 {
   return (tempC * 1.8); 
+}
+//
+// convert temperature from C to F
+//
+float FtoCAbsolute(float tempF)
+{
+  return (tempF - 32) / 1.8; 
+}
+//
+// convert temperature difference from C to F
+//
+float FtoCRelative(float tempF)
+{
+  return tempF / 1.8; 
 }
 //
 // returns true if time is PM (for 12 hour display)
@@ -2959,10 +3000,12 @@ bool RTC_Setup()
   // When the RTC was stopped and stays connected to the battery, it has
   // to be restarted by clearing the STOP bit. Let's do this to ensure
   // the RTC is running.
+  #ifdef RTC_8563
   if(rVal) 
   {
     rtc.start();
   };
+  #endif
   return rVal;
 }
 //
@@ -2970,7 +3013,8 @@ bool RTC_Setup()
 //
 float Thermo_GetTemp()
 {
-  float temperature = tempSensor.getThermocoupleTemp();
+  //float temperature = tempSensor.getThermocoupleTemp();
+  float temperature = tempSensor.readThermocouple();
   if (isnan(temperature)) 
   {
     return -100.0F;
@@ -2988,63 +3032,90 @@ float Thermo_GetTemp()
 void Thermo_Setup()
 {
   char outStr[256];
-  tempSensor.begin();       // Uses the default address for the Thermocouple Amplifier
-  if(tempSensor.isConnected())
+  if(tempSensor.begin(I2C_ADDRESS_THERMO))
   {
     #ifdef DEBUG_VERBOSE
-    Serial.println("Thermocouple will acknowledge!");
+    Serial.println("Thermocouple acknowledged");
     #endif
+    tftDisplay.drawString("Thermocouple acknowledged", textPosition[0], textPosition[1], GFXFF);
+    textPosition[1] += fontHeight;
   }
   else 
   {
     #ifdef DEBUG_VERBOSE
-    Serial.println("Thermocouple did not acknowledge! Freezing.");
+    Serial.println("Thermocouple did not acknowledge");
     #endif
     tftDisplay.drawString("Thermocouple did not acknowledge", textPosition[0], textPosition[1], GFXFF);
     textPosition[1] += fontHeight;
     while(1); //hang forever
   }
+  tempSensor.setADCresolution(MCP9600_ADCRESOLUTION_18);
+  Serial.print("ADC resolution set to ");
+  switch (tempSensor.getADCresolution()) 
+  {
+    case MCP9600_ADCRESOLUTION_18:   
+      Serial.print("18"); 
+      break;
+    case MCP9600_ADCRESOLUTION_16:   
+      Serial.print("16"); 
+      break;
+    case MCP9600_ADCRESOLUTION_14:   
+      Serial.print("14"); 
+      break;
+    case MCP9600_ADCRESOLUTION_12:   
+      Serial.print("12"); 
+      break;
+  }
+  Serial.println(" bits");
   //change the thermocouple type being used
-  #ifdef DEBUG_VERBOSE
   Serial.println("Setting Thermocouple Type!");
-  #endif
-  tempSensor.setThermocoupleType(TYPE_K);
+  tempSensor.setThermocoupleType(MCP9600_TYPE_K);
    //make sure the type was set correctly!
   switch(tempSensor.getThermocoupleType())
   {
-    case TYPE_K:
-      sprintf(outStr,"Thermocouple OK (Type K)");
+    case MCP9600_TYPE_K:
+      sprintf(outStr,"Type K ");
       break;
-    case TYPE_J:
+    case MCP9600_TYPE_J:
       sprintf(outStr,"Thermocouple set failed (Type J");
       break;
-    case TYPE_T:
+    case MCP9600_TYPE_T:
       sprintf(outStr,"Thermocouple set failed (Type T");
       break;
-    case TYPE_N:
+    case MCP9600_TYPE_N:
       sprintf(outStr,"Thermocouple set failed (Type N");
       break;
-    case TYPE_S:
+    case MCP9600_TYPE_S:
       sprintf(outStr,"Thermocouple set failed (Type S");
       break;
-    case TYPE_E:
+    case MCP9600_TYPE_E:
       sprintf(outStr,"Thermocouple set failed (Type E");
       break;
-    case TYPE_B:
+    case MCP9600_TYPE_B:
       sprintf(outStr,"Thermocouple set failed (Type B");
       break;
-    case TYPE_R:
+    case MCP9600_TYPE_R:
       sprintf(outStr,"Thermocouple set failed (Type R");
       break;
     default:
       sprintf(outStr,"Thermocouple set failed (unknown type");
       break;
   }
-  #ifdef DEBUG_VERBOSE
   Serial.println(outStr);
-  #endif
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
+
+  tempSensor.setFilterCoefficient(3);
+  Serial.print("Thermocouple filter coefficient value set to: ");
+  Serial.println(tempSensor.getFilterCoefficient());
+
+
+  sprintf(outStr,"Temp: C: %0.2FC/%0.2FF H: %0.2FC/%0.2FF",tempSensor.readAmbient(), CtoFAbsolute(tempSensor.readAmbient()),
+                                                           tempSensor.readThermocouple(), CtoFAbsolute(tempSensor.readThermocouple()));
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
+
+
   for(int idx = 0; idx < TEMP_BUFFER; idx++)
   {
     tempValues[idx] = -100.0;

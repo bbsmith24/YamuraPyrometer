@@ -1,123 +1,133 @@
 <html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Yamura Tire Pyrometer</title>
-  <link rel="icon" href="data:,">
-  <link rel="stylesheet" type="text/css" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" /><meta http-equiv="Expires" content="0"/>
+<title>Yamura Tire Pyrometer</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" type="text/css" href="style.css">
 </head>
 <body>
-  <div class="content">
-    <div class="card-grid">
-      <div class="card">
-        <form action="/" method="POST">
-          <p>
-            <div>
-             <h3>Car and Driver Info</h3>
-            </div>
-            <div class="input"> 
-              <label for="driver_id">Driver</label>
-              <input type="text" id ="driver_id_id" name="driver" value = "Driver"><br>
-            </div>
-            <div class="input"> 
-              <label for="pass_id">Car</label>
-              <input type="text" id ="car_id" name="car" value = "Car"><br>
-            </div>
-            <div class="input"> 
-              <label for="tirecount_id">Tire Count (2, 3, 6, or 6)</label>
-              <input type="text" id ="tirecount_id" name="tirecount "value = "6"><br>
-            </div>
-            <div class="input"> 
-              <label for="measurecount_id">Measurements per Tire (1, 2, or 3)</label>
-              <input type="text" id ="measurecount_id" name="measurecount" value = "3"><br>
-            </div>
-          </p>
-
-          <p>
-            <div>
-             <h3>Tire Info</h3>
-            </div>
-            <div class="dInput" v-if="activeStage == 3">
-              <div><label for="tire1_full_id">Full</label>
-              <input type="text" id ="tire1_full_id" name="tire1_full_id" value = "Right Front"></div>
-              <div><label for="tire1_short_id">Short</label>
-              <input type="text" id ="tire1_short_id" name="tire1_short_id" value = "RF"></div>
-              <div><label for="tire1_maxt_id">Max T</label>
-              <input type="text" id ="tire1_maxt_id" name="tire1_maxt_id" value = "110.0"></div><br>
-            </div>
-            <div class="dInput" v-if="activeStage == 3">
-              <div><label for="tire2_full_id"></label>
-              <input type="text" id ="tire2_full_id" name="tire2_full_id" value = "Left Front"></div>
-              <div><label for="tire2_short_id"></label>
-              <input type="text" id ="tire2_short_id" name="tire2_short_id" value = "LF"></div>
-              <div><label for="tire2_maxt_id"></label>
-              <input type="text" id ="tire2_maxt_id" name="tire2_maxt_id" value = "110.0"></div>
-            </div>
-            <div class="dInput" v-if="activeStage == 3">
-              <div><label for="tire4_full_id"></label>
-              <input type="text" id ="tire4_full_id" name="tire4_full_id" value = "Left Rear"></div>
-              <div><label for="tire4_short_id"></label>
-              <input type="text" id ="tire4_short_id" name="tire4_short_id" value = "LR"></div>
-              <div><label for="tire4_maxt_id"></label>
-              <input type="text" id ="tire4_maxt_id" name="tire4_maxt_id" value = "110.0"></div>
-            </div>
-            <div class="dInput" v-if="activeStage == 3">
-              <div><label for="tire4_full_id"></label>
-              <input type="text" id ="tire4_full_id" name="tire4_full_id" value = "Right Rear"></div>
-              <div><label for="tire4_short_id"></label>
-              <input type="text" id ="tire4_short_id" name="tire4_short_id" value = "RR"></div>
-              <div><label for="tire4_maxt_id"></label>
-              <input type="text" id ="tire4_maxt_id" name="tire4_maxt_id" value = "110.0"></div>
-            </div>
-            <div class="dInput" v-if="activeStage == 3">
-              <div><label for="tire5_full_id"></label>
-              <input type="text" id ="tire5_full_id" name="tire5_full_id" value = "-"></div>
-              <div><label for="tire5_short_id"></label>
-              <input type="text" id ="tire5_short_id" name="tire5_short_id" value = "-"></div>
-              <div><label for="tire5_maxt_id"></label>
-              <input type="text" id ="tire5_maxt_id" name="tire5_maxt_id" value = "-"></div>
-            </div>
-            <div class="dInput" v-if="activeStage == 3">
-              <div><label for="tire6_full_id"></label>
-              <input type="text" id ="tire6_full_id" name="tire6_full_id" value = "-"></div>
-              <div><label for="tire6_short_id"></label>
-              <input type="text" id ="tire6_short_id" name="tire6_short_id" value = "-"></div>
-              <div><label for="tire6_maxt_id"></label>
-              <input type="text" id ="tire6_maxt_id" name="tire6_maxt_id" value = "-"></div>
-            </div>
-          </p>
-		  <p>
-            <div>
-             <h3>Measure Points</h3>
-            </div>
-            <div class="dInput" v-if="activeStage == 3">
-              <div><label for="position1_full_id">Full</label>
-              <input type="text" id ="position1_full_id" name="position1_full_id" value = "Outer"></div>
-              <div><label for="position1_short_id">Short</label>
-              <input type="text" id ="position1_short_id" name="position1_short_id" value = "O"></div>
-            </div>
-            <div class="dInput" v-if="activeStage == 3">
-              <div><label for="position2_full_id"></label>
-              <input type="text" id ="position2_full_id" name="position2_full_id" value = "Center"></div>
-              <div><label for="position2_short_id"></label>
-              <input type="text" id ="position2_short_id" name="position2_short_id" value = "C"></div>
-            </div>
-            <div class="dInput" v-if="activeStage == 3">
-              <div><label for="position3_full_id"></label>
-              <input type="text" id ="position3_full_id" name="position3_full_id" value = "Inner"></div>
-              <div><label for="position3_short_id"></label>
-              <input type="text" id ="position3_short_id" name="position3_short_id" value = "I"></div>
-            </div>
-		  </p>
-        </form>
-      </div>
-    </div>
-  </div>
-  <input type ="submit" value ="Update">
-  <input type ="submit" value ="Prior">
-  <input type ="submit" value ="Next">
-  <input type ="submit" value ="New">
-  <input type ="submit" value ="Delete">
-  <button><a href="py_main.html">Home</a></button>
+<div class="content">
+<div class="card-grid">
+<div class="card">
+<form action="/" method="POST">
+<p>
+<div>
+<h3>Car and Driver Info</h3>
+</div>
+<div class="dInput" v-if="activeStage == 3">
+<div><label for="car_id">Car/Driver</label>
+<input type="text" id ="car_id" name="car_id" value = "Brian BMW Z4"></div>
+</div>
+<div><label for="tirecount_id">Tires (4)</label>
+<div><select id ="tirecount_id" name="tirecount_id"><br>
+<option>4</option>
+<option>2</option>
+<option>3</option>
+<option>4</option>
+<option>6</option>
+</select>
+<div><label for="measurecount_id">Measurements (3)</label>
+<div><select id ="measurecount_id" name="measurecount_id"><br>
+<option>3</option>
+<option>1</option>
+<option>2</option>
+<option>3</option>
+</select>
+</div>
+</p>
+<p>
+<div>
+<h3>Tire Info</h3>
+</div>
+<div class="dInput" v-if="activeStage == 3">
+<div><label for="tire0_full_id">Full</label>
+<input type="text" id ="tire0_full_id" name="tire0_full_id" value = "Left Front"></div>
+<div><label for="tire0_short_id">Short</label>
+<input type="text" id ="tire0_short_id" name="tire0_short_id" value = "LF"></div>
+<div><label for="tire0_maxt_id">Max T</label>
+<input type="text" id ="tire0_maxt_id" name="tire0_maxt_id" value = "110.0"></div>
+</div>
+<div class="dInput" v-if="activeStage == 3">
+<div>
+<input type="text" id ="tire1_full_id" name="tire1_full_id" value = "Right Front"></div>
+<div><label for="tire1_short_id"></label>
+<input type="text" id ="tire1_short_id" name="tire1_short_id" value = "RF"></div>
+<div><label for="tire1_maxt_id"></label>
+<input type="text" id ="tire1_maxt_id" name="tire1_maxt_id" value = "110.0"></div>
+</div>
+<div class="dInput" v-if="activeStage == 3">
+<div>
+<input type="text" id ="tire2_full_id" name="tire2_full_id" value = "Right Rear"></div>
+<div><label for="tire2_short_id"></label>
+<input type="text" id ="tire2_short_id" name="tire2_short_id" value = "RR"></div>
+<div><label for="tire2_maxt_id"></label>
+<input type="text" id ="tire2_maxt_id" name="tire2_maxt_id" value = "110.0"></div>
+</div>
+<div class="dInput" v-if="activeStage == 3">
+<div>
+<input type="text" id ="tire3_full_id" name="tire3_full_id" value = "Left Rear"></div>
+<div><label for="tire3_short_id"></label>
+<input type="text" id ="tire3_short_id" name="tire3_short_id" value = "LR"></div>
+<div><label for="tire3_maxt_id"></label>
+<input type="text" id ="tire3_maxt_id" name="tire3_maxt_id" value = "110.0"></div>
+</div>
+<div class="dInput" v-if="activeStage == 3">
+<div>
+<input type="text" id ="tire4_full_id" name="tire4_full_id" value = "-"></div>
+<div><label for="tire4_short_id"></label>
+<input type="text" id ="tire4_short_id" name="tire4_short_id" value = "-"></div>
+<div><label for="tire4_maxt_id"></label>
+<input type="text" id ="tire4_maxt_id" name="tire4_maxt_id" value = "-"></div>
+</div>
+<div class="dInput" v-if="activeStage == 3">
+<div>
+<input type="text" id ="tire5_full_id" name="tire5_full_id" value = "-"></div>
+<div><label for="tire5_short_id"></label>
+<input type="text" id ="tire5_short_id" name="tire5_short_id" value = "-"></div>
+<div><label for="tire5_maxt_id"></label>
+<input type="text" id ="tire5_maxt_id" name="tire5_maxt_id" value = "-"></div>
+</div>
+</p>
+<p>
+<div>
+<h3>Measure Points</h3>
+</div>
+<div class="dInput" v-if="activeStage == 3">
+<div><label for="position0_full_id">Full</label>
+<input type="text" id ="position0_full_id" name="position0_full_id" value = "Outer"></div>
+<div><label for="position0_short_id">Short</label>
+<input type="text" id ="position0_short_id" name="position0_short_id" value = "O"></div>
+</div>
+<div class="dInput" v-if="activeStage == 3">
+<div>
+<input type="text" id ="position1_full_id" name="position1_full_id" value = "Center"></div>
+<div>
+<input type="text" id ="position1_short_id" name="position1_short_id" value = "C"></div>
+</div>
+<div class="dInput" v-if="activeStage == 3">
+<div>
+<input type="text" id ="position2_full_id" name="position2_full_id" value = "Inner"></div>
+<div>
+<input type="text" id ="position2_short_id" name="position2_short_id" value = "I"></div>
+</div>
+</table>
+<p>
+<div>
+<h3>Actions</h3>
+</div>
+<button name="update" type ="submit" value ="update">Update</button>
+<button name="prior"  type ="submit" value ="prior">Prior</button>
+<button name="next"   type ="submit" value ="next">Next</button>
+<button name="delete" type ="submit" value ="delete">Delete</button>
+<button name="new"    type ="submit" value ="new">New</button>
+<button name="home" type="submit" value="home"><a href="/py_main.html">Home</a></button>
+</p>
+</form>
+</div>
+</div>
+</div>
 </body>
 </html>

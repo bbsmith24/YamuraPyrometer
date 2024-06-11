@@ -7,10 +7,12 @@
 
 */
 // select 1 RTC library. Modify RTC_ functions as needed
-#define RTC_8563   // using 8563 RTC
-//#define RTC_3231 // using 3231 RTC
+#define HAS_RTC
+//#define RTC_8563   // using 8563 RTC
+#define RTC_3231 // using 3231 RTC
 // select 1 Thermocouple amp library. Modify Thermo_ functions as needed
-#define THERMO_MPC9600 // using MPC9600 thermocouple amp
+//#define THERMO_MCP9600 // using MPC9600 thermocouple amp
+#define THERMO_MCP9601 // using MPC9601 thermocouple amp
 //
 #include <Arduino.h>
 #include <WiFi.h>
@@ -23,13 +25,15 @@
 #include "SD.h"
 #include "SPI.h" 
 // install correct thermocouple library
-#ifdef THERMO_MPC9600
-#include <SparkFun_MCP9600.h>    // MPC9600 Thermocouple library https://github.com/sparkfun/SparkFun_MCP9600_Arduino_Library
+#ifdef THERMO_MCP9600
+//#include <SparkFun_MCP9600.h>    // MPC9600 Thermocouple library https://github.com/sparkfun/SparkFun_MCP9600_Arduino_Library
+#include <Adafruit_MCP9600.h> 
+#endif
+#ifdef THERMO_MCP9601
+#include <Adafruit_MCP9601.h> 
 #endif
 // install correct RTC library
-#ifdef RTC_8563
 #include "RTClib.h"              // PCF8563 RTC library https://github.com/adafruit/RTClib
-#endif
 
 // uncomment for debug to serial monitor (use #ifdef...#endif around debug output prints)
 //#define DEBUG_VERBOSE
@@ -41,8 +45,7 @@
 // I2C pins
 #define I2C_SDA 21
 #define I2C_SCL 22
-// uncomment for RTC module attached
-#define HAS_RTC
+
 // max menu item count
 #define MAX_MENU_ITEMS 100
 // main menu
@@ -145,12 +148,24 @@ float currentTemps[18];
 
 // devices
 // thermocouple amplifier
-MCP9600 tempSensor;
+#ifdef THERMO_MCP9600
+Adafruit_MCP9600 tempSensor;
+#define I2C_ADDRESS_THERMO 0x67
+#endif
+#ifdef THERMO_MCP9601
+Adafruit_MCP9601 tempSensor;
+#define I2C_ADDRESS_THERMO 0x67
+#endif
 // temp values for stabilization calculation
 float tempValues[100];
 
-// rtc
+#ifdef RTC_8563
 RTC_PCF8563 rtc;
+#endif
+#ifdef RTC_3231
+RTC_DS3231 rtc;
+#endif
+
 bool century = false;
 bool h12Flag;
 bool pmFlag;
@@ -205,7 +220,7 @@ void WriteCarSetupHTML(fs::FS &fs, const char * path, int carIdx);
 void ReadDeviceSetupFile(fs::FS &fs, const char * path);
 void WriteDeviceSetupFile(fs::FS &fs, const char * path);
 void WriteDeviceSetupHTML(fs::FS &fs, const char * path);
-void WriteResultsHTML();
+void WriteResultsHTML(fs::FS &fs);
 void ReadMeasurementFile(char buf[], CarSettings &currentResultCar);
 void WriteMeasurementFile();
 
@@ -227,6 +242,8 @@ void SetFont(int fontSize);
 // temperature functions
 float CtoFAbsolute(float tempC);
 float CtoFRelative(float tempC);
+float FtoCAbsolute(float tempF);
+float FtoCRelative(float tempF);
 // date, time, RTC
 bool RTC_IsPM();
 String RTC_GetStringTime();

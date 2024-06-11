@@ -1,108 +1,122 @@
 5
-Brian Z4
+1
+Brian BMW Z4
 4
 LF
 Left Front
-110.0
+110.00
 RF
 Right Front
-110.0
-LR
-Left Rear
-110.0
+110.00
 RR
 Right Rear
-110.0
+110.00
+LR
+Left Rear
+110.00
 3
 O
 Outer
-M
-Middle
+C
+Center
 I
 Inner
 ==========
-Mark MR2
+2
+Mark Toyota MR2
 4
 RF
 Left Front
-110.0
+110.00
 LR
 Right Front
-110.0
+110.00
 LF
 Left Rear
-110.0
+110.00
 RR
 Right Rear
-110.0
+110.00
 3
 O
 Outer
-M
-Middle
+C
+Center
 I
 Inner
 ==========
-Jody P34
+3
+Jody Tyrell P34
 6
 LF
 Left Front
-110.0
+110.00
 RF
 Right Front
-110.0
+110.00
 LM
 Left Mid
-110.0
+110.00
 RM
 Right Mid
-110.0
+110.00
 LR
 Left Rear
-110.0
+110.00
 RR
 Right Rear
-110.0
+110.00
 3
 O
 Outer
-M
-Middle
+C
+Center
 I
 Inner
 ==========
-Doc YRZ-M1
-2
-F
-Front
-110.0
-R
-Rear
-110.0
-3
-O
-Outer
-M
-Middle
-I
-Inner
-==========
-Nigel Super3
-3
-LF
-Left Front
-110.0
+6
+Rob Mazda Miata
+4
 RF
 Right Front
-110.0
-R
-Rear
-110.0
+100.00
+LF
+Left Front
+100.00
+LR
+Left Rear
+100.00
+RR
+Right Rear
+100.00
 3
 O
 Outer
-M
-Middle
+C
+Center
+I
+Inner
+==========
+7
+Caius BMW Z3
+4
+LF
+Left Front
+100.00
+RF
+Right Front
+100.00
+RR
+Right Rear
+100.00
+LR
+Left Rear
+100.00
+3
+O
+Outer
+C
+Center
 I
 Inner
 ==========
