@@ -124,8 +124,6 @@ void setup()
   #ifdef DEBUG_VERBOSE
   Serial.println( "initializing microSD" );
   #endif
-  tftDisplay.drawString("Initializing SD card", textPosition[0], textPosition[1], GFXFF);
-  textPosition[1] += fontHeight;
 
   int failCount = 0;
   while(!SD.begin(SD_CS))
@@ -134,15 +132,22 @@ void setup()
     Serial.println("microSD card mount failed");
     #endif
     failCount++;
-    sprintf(outStr, "microSD card mount failed after %d attempts", failCount);
-    tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+    if(failCount == 1)
+    {
+      tftDisplay.drawString("Initializing SD card", textPosition[0], textPosition[1], GFXFF);
+   }
+    else if(failCount > 1)
+    {
+      sprintf(outStr, "microSD card mount failed after %d attempts", failCount);
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+    }
     if(failCount > 100)
     {
       while(true) { }
     }
     delay(1000);
   }
-  tftDisplay.drawString("SD initialized", textPosition[0], textPosition[1], GFXFF);
+  tftDisplay.drawString("SD initialized           ", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   uint8_t cardType = SD.cardType();
   if(cardType == CARD_NONE)
@@ -156,17 +161,24 @@ void setup()
   ListDirectory(SD, "/", 3);
   #endif
 
-  tftDisplay.drawString("Read device setup", textPosition[0], textPosition[1], GFXFF);
-  textPosition[1] += fontHeight;
+  tftDisplay.drawString("Read device setup        ", textPosition[0], textPosition[1], GFXFF);
+  delay(1000);
+  //textPosition[1] += fontHeight;
   ReadDeviceSetupFile(SD,  "/py_set.txt");
+  //WriteDeviceSetupHTML(SD, "/py_set.html");
   WriteDeviceSetupHTML(LittleFS, "/py_set.html");
-  WriteDeviceSetupHTML(SD, "/py_set.html");
 
-  tftDisplay.drawString("Read cars setup", textPosition[0], textPosition[1], GFXFF);
-  textPosition[1] += fontHeight;
+  tftDisplay.drawString("Read cars setup          ", textPosition[0], textPosition[1], GFXFF);
+  delay(1000);
+  //textPosition[1] += fontHeight;
   ReadCarSetupFile(SD,  "/py_cars.txt");
+  //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
   WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
-  WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
+
+  tftDisplay.drawString("Write results to HTML    ", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
+  //WriteResultsHTML(SD);
+  WriteResultsHTML(LittleFS);
 
   #ifdef HAS_RTC
   // get time from RTC
@@ -176,10 +188,11 @@ void setup()
   #endif
   deviceState = DISPLAY_MENU;
 
-  tftDisplay.drawString("Write results to HTML", textPosition[0], textPosition[1], GFXFF);
-  textPosition[1] += fontHeight;
-  WriteResultsHTML(LittleFS);
-  WriteResultsHTML(SD);
+  
+  
+  #ifdef DEBUG_VERBOSE
+  ListDirectory(LittleFS, "/", 1);
+  #endif
 
   WiFi.softAP(deviceSettings.ssid, deviceSettings.pass);
   IP = WiFi.softAPIP();
@@ -373,7 +386,7 @@ void setup()
           }
           WriteCarSetupFile(SD, "/py_cars.txt");
           WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
-          WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
+          //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
         }
         else if ((strcmp(p->name().c_str(), "new") == 0))
         {
@@ -409,7 +422,7 @@ void setup()
           strcpy(cars[carCount - 1].positionLongName[2], "-");
           WriteCarSetupFile(SD, "/py_cars.txt");
           WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
-          WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
+          //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
         }
         else if ((strcmp(p->name().c_str(), "delete") == 0))
         {
@@ -425,21 +438,21 @@ void setup()
           }
           WriteCarSetupFile(SD, "/py_cars.txt");
           WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
-          WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
+          //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
         }
         // buttons
         if (strcmp(p->name().c_str(), "next") == 0)
         {
           carSetupIdx = carSetupIdx + 1 < carCount ? carSetupIdx + 1 : carCount - 1;
           WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
-          WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
+          //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
           request->send(LittleFS, "/py_cars.html", "text/html");
         }
         if (strcmp(p->name().c_str(), "prior") == 0)
         {
           carSetupIdx = carSetupIdx - 1 >= 0 ? carSetupIdx - 1 : 0;
           WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
-          WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
+          //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
           request->send(LittleFS, "/py_cars.html", "text/html");
         }
         request->send(LittleFS, "/py_cars.html", "text/html");
@@ -457,7 +470,7 @@ void setup()
           deviceSettings.fontPoints = tempDevice.fontPoints;
           WriteDeviceSetupFile(SD, "/py_set.txt");
           WriteDeviceSetupHTML(LittleFS, "/py_set.html");
-          WriteDeviceSetupHTML(SD, "/py_set.html");
+          //WriteDeviceSetupHTML(SD, "/py_set.html");
           request->send(LittleFS, "/py_set.html", "text/html");
         }
       }

@@ -1,10 +1,11 @@
-<head>
-<body>
 <!DOCTYPE html>
 <html>
 <head>
-<title>Yamura Pyrometer Setup</title>
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" /><meta http-equiv="Expires" content="0"/>
+<title>Yamura Pyrometer Setup</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" type="text/css" href="style.css">
 </head>
@@ -17,33 +18,70 @@
 <div>
 <h3>Pyrometer Settings</h3>
 </div>
-<div class="inputrow">
+</p>
+<p>
+<div class="dinput" v-if="activeStage == 3">
 <label for="ssid_id">SSID</label>
-<input type="text" id ="ssid_id" name="ssid" value = "Yamura-Pyrometer"><br>
+<div><input type="text" id ="ssid_id" name="ssid_id" value = "Yamura-Pyrometer"><br>
 </div>
-<div class="inputrow">
+</p>
+<p>
+<div class="dinput" v-if="activeStage == 3">
 <label for="pass_id">Password</label>
-<input type="text" id ="pass_id" name="pass" value = "ZoeyDora48375"><br>
+<div><input type="text" id ="pass_id" name="pass_id" value = "ZoeyDora48375"><br>
 </div>
-<div class="inputrow">
-<label for="units_id">Units (F or C)</label>
-<input type="text" id ="units_id" name="units_id "value = "F"><br>
+</p>
+<p>
+<div class="dinput" v-if="activeStage == 3">
+<label for="units_id">Temperature Units (F)</label>
+<div><select id ="units_id" name="units_id"><br>
+<option>F</option>
+<option>F</option>
+<option>C</option>
+</select>
 </div>
-<div class="inputrow">
-<label for="orientation_id">Screen Orientation (R or L)</label>
-<input type="text" id ="orientation_id" name="orientation_id" value = "R"><br>
+</p>
+<p>
+<div class="dinput" v-if="activeStage == 3">
+<label for="orientation_id">Screen Orientation (R)</label>
+<div><select id ="orientation_id" name="orientation_id"><br>
+<option>R</option>
+<option>R</option>
+<option>L</option>
+</select>
 </div>
-<div class="inputrow">
-<label for="clock_id">Clock (12 or 24)</label>
-<input type="text" id ="clock_id" name="clock_id" value = "12"><br>
+</p>
+<p>
+<div class="dinput" v-if="activeStage == 3">
+<label for="clock_id">Clock (12)</label>
+<div><select id ="clock_id" name="clock_id"><br>
+<option>12</option>
+<option>12</option>
+<option>24</option>
+</select>
 </div>
-<div class="inputrow">
+</p>
+<p>
+<div class="dinput" v-if="activeStage == 3">
 <label for="fontsize_id">Font Size (12)</label>
+<div><select id ="fontsize_id" name="fontsize_id"><br>
+<option>12</option>
+<option>9</option>
+<option>12</option>
+<option>18</option>
+<option>24</option>
+</select>
 </div>
-<input type ="submit" value ="Submit">
+</p>
+<p>
+<div>
+<h3>Actions</h3>
+</div>
+<button name="update" type ="submit" value ="update">Update</button>
 <button><a href="py_main.html">Home</a></button>
 </p>
 </form>
+</div>
 </div>
 </div>
 </div>
