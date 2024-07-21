@@ -38,9 +38,14 @@ void setup()
   textPosition[1] = 0;
 
   // user input buttons
-  buttons[0].buttonPin = 12;
-  buttons[1].buttonPin = 14;
-  buttons[2].buttonPin = 26;
+  //buttons[0].buttonPin = 12;  // select
+  //buttons[1].buttonPin = 14;  // down
+  //buttons[2].buttonPin = 26;  // up
+
+  buttons[2].buttonPin = 14;  // up
+  buttons[1].buttonPin = 12;  // down
+  buttons[0].buttonPin = 26;  // select
+
   // set up tft display
   tftDisplay.init();
   tftDisplay.invertDisplay(false);
