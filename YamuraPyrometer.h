@@ -225,16 +225,22 @@ void ReadMeasurementFile(char buf[], CarSettings &currentResultCar);
 void WriteMeasurementFile();
 
 // measure and display tire temps, TFT specific functions
-int MeasureTireTemps(int tire);
+// grid version of tire temp measure
+void MeasureAllTireTempsGrid();
+int MeasureTireTempsGrid(int tire); // measure single tire temps displaying in grid
+float GetStableTempGrid(int row, int col);
+// single tire version of tire temp measure
+void MeasureAllTireTemps();
+int MeasureTireTemps(int tire); // measure single tire temps full screen
+float GetStableTemp(int row, int col);
+
 void InstantTemp();
 void DrawTireMeasureGrid(int tireCount);
 void SetupTireMeasureGrid(int fontHeight);
 void DisplayAllTireTemps(CarSettings currentResultCar);
-void MeasureAllTireTemps();
 int GetNextTire(int selTire, int nextDirection);
 void DrawCellText(int row, int col, char* text, uint16_t textColor, uint16_t backColor);
 void RotateDisplay(bool rotateButtons);
-float GetStableTemp(int row, int col);
 void YamuraBanner();
 void SetFont(int fontSize);
 

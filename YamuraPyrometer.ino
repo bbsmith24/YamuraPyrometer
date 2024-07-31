@@ -49,6 +49,7 @@ void setup()
   // set up tft display
   tftDisplay.init();
   tftDisplay.invertDisplay(false);
+  //tftDisplay.invertDisplay(true);
   RotateDisplay(true);  
   int w = tftDisplay.width();
   int h = tftDisplay.height();
@@ -58,10 +59,11 @@ void setup()
   // 1 landscape pins right
   // 2 portrait pins up
   // 3 landscape pins left
-  tftDisplay.fillScreen(TFT_BLACK);
+  //tftDisplay.fillScreen(TFT_BLACK);
+  tftDisplay.fillScreen(TFT_WHITE);
   YamuraBanner();
   SetFont(deviceSettings.fontPoints);
-  tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
   tftDisplay.drawString("Yamura Motors LLC Recording Pyrometer", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   //
@@ -226,7 +228,7 @@ void setup()
     for(int i=0; i < params; i++)
     {
       forceContinue = false;
-      AsyncWebParameter* p = request->getParam(i);
+      const AsyncWebParameter* p = request->getParam(i);
       
       #ifdef DEBUG_VERBOSE
       Serial.print(i);
@@ -593,7 +595,7 @@ void DisplaySelectedResultsMenu(fs::FS &fs, const char * path)
   File file = SD.open(path, FILE_READ);
   if(!file)
   {
-    tftDisplay.fillScreen(TFT_BLACK);
+    tftDisplay.fillScreen(TFT_WHITE);
     YamuraBanner();
     tftDisplay.drawString("No results for", 5, 0,  GFXFF);
     tftDisplay.drawString(cars[selectedCar].carName, 5, fontHeight, GFXFF);
@@ -639,7 +641,7 @@ void DisplaySelectedResultsMenu(fs::FS &fs, const char * path)
   file = SD.open(path, FILE_READ);
   if(!file)
   {
-    tftDisplay.fillScreen(TFT_BLACK);
+    tftDisplay.fillScreen(TFT_WHITE);
     YamuraBanner();
     tftDisplay.drawString("No results for", 5, 0, GFXFF);
     tftDisplay.drawString(cars[selectedCar].carName, 5, fontHeight, GFXFF);
@@ -853,7 +855,7 @@ int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSel
     buttons[btnIdx].buttonReleased = false;
   }
   // erase screen, draw banner
-  tftDisplay.fillScreen(TFT_BLACK);
+  tftDisplay.fillScreen(TFT_WHITE);
   YamuraBanner();
   // loop until selection is made
   SetFont(fontSize);
@@ -869,7 +871,7 @@ int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSel
     for(int menuIdx = displayRange[0]; menuIdx <= displayRange[1]; menuIdx++)
     {
       sprintf(outStr, "%s", choices[menuIdx].description.c_str());
-      tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_BLACK);
+      tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
       if(menuIdx == selection)
       {
         tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
@@ -877,7 +879,7 @@ int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSel
       }
       else
       {
-        tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+        tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
         tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
       }
       textPosition[1] += fontHeight;
@@ -954,7 +956,7 @@ void SetDateTime()
   unsigned long curTime = millis();
   int delta = 0;
   #ifndef HAS_RTC
-  tftDisplay.fillScreen(TFT_BLACK);
+  tftDisplay.fillScreen(TFT_WHITE);
   YamuraBanner();
   tftDisplay.drawString("RTC not present", textPosition[0], textPosition[1], GFXFF);
   delay(5000);
@@ -986,10 +988,10 @@ void SetDateTime()
   {
     textPosition[0] = 5;
     textPosition[1] = 0;
-    tftDisplay.fillScreen(TFT_BLACK);
+    tftDisplay.fillScreen(TFT_WHITE);
     YamuraBanner();
     SetFont(24);
-    tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
   
     tftDisplay.drawString("Set date/time", textPosition[0], textPosition[1], GFXFF);
     
@@ -1002,13 +1004,13 @@ void SetDateTime()
     }
     else
     {
-      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+      tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
     }
     tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     textPosition[0] += tftDisplay.textWidth(outStr);
 
     sprintf(outStr, "/");
-    tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
     tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     textPosition[0] += tftDisplay.textWidth(outStr);
 
@@ -1019,13 +1021,13 @@ void SetDateTime()
     }
     else
     {
-      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+      tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
     }
     tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     textPosition[0] += tftDisplay.textWidth(outStr);
 
     sprintf(outStr, "/");
-    tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
     tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     textPosition[0] += tftDisplay.textWidth(outStr);
 
@@ -1036,7 +1038,7 @@ void SetDateTime()
     }
     else
     {
-      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+      tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
     }
     tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     textPosition[0] += tftDisplay.textWidth(outStr);
@@ -1048,7 +1050,7 @@ void SetDateTime()
     }
     else
     {
-      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+      tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
     }
     tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
 
@@ -1062,13 +1064,13 @@ void SetDateTime()
     }
     else
     {
-      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+      tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
     }
     tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     textPosition[0] += tftDisplay.textWidth(outStr);
 
     sprintf(outStr, ":");
-    tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
     tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     textPosition[0] += tftDisplay.textWidth(outStr);
 
@@ -1079,7 +1081,7 @@ void SetDateTime()
     }
     else
     {
-      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+      tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
     }
     tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     textPosition[0] += tftDisplay.textWidth(outStr);
@@ -1093,7 +1095,7 @@ void SetDateTime()
       }
       else
       {
-        tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+        tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
       }
       tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);
     }
@@ -1225,7 +1227,7 @@ void SetDateTime()
   RTC_SetDateTime(timeVals[YEAR], timeVals[MONTH], timeVals[DATE], timeVals[HOUR],timeVals[MINUTE],timeVals[SECOND]);
   textPosition[1] += fontHeight * 2;
   sprintf(outStr,"Set to %s %s", RTC_GetStringTime(), RTC_GetStringDate());
-  tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   SetFont(deviceSettings.fontPoints);
   delay(5000);
@@ -2136,7 +2138,7 @@ void ReadMeasurementFile(char buf[], CarSettings &currentResultCar)
 //
 // measure temperatures on a single tire
 //
-int MeasureTireTemps(int tireIdx)
+int MeasureTireTempsGrid(int tireIdx)
 {
   char outStr[512];
   // location of text
@@ -2167,8 +2169,8 @@ int MeasureTireTemps(int tireIdx)
       DrawCellText(row, 
                    col, 
                    "****", 
-                   TFT_WHITE, 
-                   TFT_BLACK);
+                   TFT_BLACK,
+                   TFT_WHITE);
       drawStars = false;
     }
     // get time and process buttons for press/release
@@ -2207,13 +2209,89 @@ int MeasureTireTemps(int tireIdx)
     // get stable temp after arming
     row = ((tireIdx / 2) * 2) + 1;
     col = measIdx + ((tireIdx % 2) * 3);
-    tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = GetStableTemp(row, col);
+    tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = GetStableTempGrid(row, col);
     // disarm after stable temp
     armed = false;
     // next position
     measIdx++;
     drawStars = true;
   }
+  return 1;
+}
+//
+// measure temperatures on a single tire
+//
+int MeasureTireTemps(int tireIdx)
+{
+  char outStr[512];
+  // location of text
+  textPosition[0] = 5;
+  textPosition[1] = 0;//fontHeight;
+
+  bool armed = false;
+  // measure location - O, M, I
+  measIdx = 0;  
+  // reset tire temps to 0.0
+  for(int idx = 0; idx < cars[selectedCar].positionCount; idx++)
+  {
+    tireTemps[(tireIdx * cars[selectedCar].positionCount) + idx] = 0.0;
+  }
+  armed = false;
+  unsigned long priorTime = millis();
+  unsigned long curTime = millis();
+  // text position on screen
+  // measuring until all positions are measured
+  bool drawStars = true;
+
+  while(measIdx < cars[selectedCar].positionCount)
+  {
+    if(drawStars)
+    {
+      textPosition[1] = fontHeight;
+      sprintf(outStr,"%s %s        ",  cars[selectedCar].tireLongName[tireIdx],  cars[selectedCar].positionLongName[measIdx]);
+      tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);      
+      textPosition[1] += 2* fontHeight;
+
+      sprintf(outStr,"        ****        ");
+      tftDisplay.setFreeFont(FSS24); // max font
+      tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);      
+      SetFont(deviceSettings.fontPoints);
+      drawStars = false;
+    }
+    // get time and process buttons for press/release
+    curTime = millis();
+    CheckButtons(curTime);
+    // button 0 release arms probe
+    // prior to arm, display ****, after display temp as it stabilizes
+    if (buttons[0].buttonReleased)
+    {
+      armed = true;
+      buttons[0].buttonReleased = false;
+    }
+    // check for button 1 or 2 release (tire selection) before measure starts
+    else if (((buttons[1].buttonReleased) || (buttons[2].buttonReleased))  && (measIdx == 0))
+    {
+
+      sprintf(outStr,"        ****        ");
+      tftDisplay.setFreeFont(FSS24); // max font
+      tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);      
+      SetFont(deviceSettings.fontPoints);
+    }
+    // if not armed continue
+    if(!armed)
+    {
+      curTime = millis();
+      continue;
+    }
+    // wait for stable temp after arming
+    tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = GetStableTemp(measIdx, textPosition[0], textPosition[1]);
+    // disarm after stable temp
+    armed = false;
+    // next position
+    measIdx++;
+    drawStars = true;
+  }
+  Serial.println("Exit MeasureTireTemps");
   return 1;
 }
 //
@@ -2229,10 +2307,10 @@ void InstantTemp()
   textPosition[0] = 5;
   textPosition[1] = 0;
   randomSeed(100);
-  tftDisplay.fillScreen(TFT_BLACK);
+  tftDisplay.fillScreen(TFT_WHITE);
   YamuraBanner();
   SetFont(deviceSettings.fontPoints);
-  tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
   sprintf(outStr, "Temperature at %s %s", RTC_GetStringTime(), RTC_GetStringDate());
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] +=  fontHeight;
@@ -2250,7 +2328,7 @@ void InstantTemp()
       textPosition[0] = 5;
       textPosition[1] = 0;
       SetFont(deviceSettings.fontPoints);
-      tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+      tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
       sprintf(outStr, "Temperature at %s %s", RTC_GetStringTime(), RTC_GetStringDate());
       tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
       textPosition[1] +=  fontHeight;
@@ -2268,7 +2346,7 @@ void InstantTemp()
         instant_temp = FtoCAbsolute(instant_temp);
       }
       sprintf(outStr, "0000.00000");
-      tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.textWidth(outStr), fontHeight, TFT_BLACK);
+      tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.textWidth(outStr), fontHeight, TFT_WHITE);
       sprintf(outStr, "%0.2f", instant_temp);
       tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
     }
@@ -2426,13 +2504,13 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
   float maxTemp = 0.0F;
   float minTemp = 999.0F;
   // initial clear of screen
-  tftDisplay.fillScreen(TFT_BLACK);
+  tftDisplay.fillScreen(TFT_WHITE);
   YamuraBanner();
   DrawTireMeasureGrid(currentResultCar.tireCount);
 
   sprintf(outStr, "%s %s", currentResultCar.carName, currentResultCar.dateTime);
   SetFont(deviceSettings.fontPoints <= 12 ? deviceSettings.fontPoints : 12);
-  tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
   tftDisplay.drawString(outStr, 5, 0, GFXFF);
 
   for(int idxTire = 0; idxTire < currentResultCar.tireCount; idxTire++)
@@ -2471,7 +2549,7 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
         sprintf(outStr, "%s", currentResultCar.positionShortName[tirePosIdx]);
       }
 	  // tire name, position
-      DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLACK);
+      DrawCellText(row, col, outStr, TFT_BLACK, TFT_WHITE);
       row++;
       sprintf(outStr, "%3.1F", tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx]);
       if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == maxTemp)
@@ -2484,7 +2562,7 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
       }
       else
       {
-        DrawCellText(row, col, outStr, TFT_WHITE,  TFT_BLACK);
+        DrawCellText(row, col, outStr, TFT_BLACK, TFT_WHITE);
       }
     }
   }
@@ -2513,9 +2591,9 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
   }
 }
 //
-// measure all tires/positions until Done selected
+// measure all tires/positions in grid until Done selected
 //
-void MeasureAllTireTemps()
+void MeasureAllTireTempsGrid()
 {
   unsigned long curTime = millis();
   unsigned long priorTime = millis();
@@ -2538,14 +2616,14 @@ void MeasureAllTireTemps()
     }
   }
 
-  tftDisplay.fillScreen(TFT_BLACK);
+  tftDisplay.fillScreen(TFT_WHITE);
   YamuraBanner();
   DrawTireMeasureGrid(cars[selectedCar].tireCount);
   SetFont(deviceSettings.fontPoints <= 12 ? deviceSettings.fontPoints : 12);
   while(true)
   {
     sprintf(outStr, "%s", cars[selectedCar].carName);
-    tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+    tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
     tftDisplay.drawString(outStr, 5, 0, GFXFF);
 
     if(!startMeasure)
@@ -2556,11 +2634,12 @@ void MeasureAllTireTemps()
       // done button
       if(selTire < cars[selectedCar].tireCount)
       {
-        DrawCellText(row, col, "DONE", TFT_WHITE, TFT_BLACK);
+        DrawCellText(row, col, "DONE", TFT_BLACK, TFT_WHITE);
       }
       else
       {
-        DrawCellText(row, col, "DONE", TFT_BLACK, TFT_YELLOW);
+        break;
+        //DrawCellText(row, col, "DONE", TFT_BLACK, TFT_YELLOW);
       }
       // tires
       for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
@@ -2612,9 +2691,9 @@ void MeasureAllTireTemps()
             if(tirePosIdx == 0)
             {
               int rectCol = col <= 2 ? 0 : 5;
-              tftDisplay.fillRect(cellPoint[row][rectCol][0], cellPoint[row][rectCol][1], 220, fontHeight - 5, TFT_BLACK);
+              tftDisplay.fillRect(cellPoint[row][rectCol][0], cellPoint[row][rectCol][1], 220, fontHeight - 5, TFT_WHITE);
             }
-            DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLACK);
+            DrawCellText(row, col, outStr, TFT_BLACK, TFT_WHITE);
           }
           // draw tire temp
 		      row++;
@@ -2624,15 +2703,15 @@ void MeasureAllTireTemps()
           {
             if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] >= maxTemp)
             {
-              DrawCellText(row, col, outStr, TFT_BLACK, TFT_RED);
+              DrawCellText(row, col, outStr, TFT_WHITE, TFT_RED);
             }
             else if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] <= minTemp)
             {
-              DrawCellText(row, col, outStr, TFT_BLACK, TFT_BLUE);
+              DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLUE);
             }
             else
             {
-              DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLACK);
+              DrawCellText(row, col, outStr, TFT_BLACK, TFT_WHITE);
             }
           }
         }
@@ -2642,6 +2721,130 @@ void MeasureAllTireTemps()
       {
         int nextDirection = MeasureTireTemps(selTire);
         selTire = GetNextTire(selTire, nextDirection);
+        continue;
+      }
+    }
+    priorTime = curTime;
+    startMeasure = false;
+    measureDone = false;
+    while(true)
+    {
+      curTime = millis();
+      CheckButtons(curTime);
+      // select button released, go to next tire
+      if(selTire == cars[selectedCar].tireCount)
+      {
+          measureDone = true;
+          break;
+      }
+      if (buttons[0].buttonReleased)
+      {
+        if(selTire < cars[selectedCar].tireCount)
+        {
+          startMeasure = true;
+        }
+        else
+        {
+          measureDone = true;
+        }
+        buttons[0].buttonReleased = false;
+        break;
+      }
+      // cancel button released, return
+      else if (buttons[1].buttonReleased)
+      {
+        selTire = GetNextTire(selTire, 1);
+        buttons[1].buttonReleased = false;
+        break;
+      }
+      else if ((buttons[2].buttonReleased)) 
+      {
+        selTire = GetNextTire(selTire, -1);
+        buttons[2].buttonReleased = false;
+        break;
+      }
+      delay(50);
+    }
+    if(measureDone)
+    {
+      break;
+    }
+  }
+  tftDisplay.fillScreen(TFT_WHITE);
+  YamuraBanner();
+  SetFont(deviceSettings.fontPoints);
+  tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
+  // location of text
+  textPosition[0] = 5;
+  textPosition[1] = 0;
+  tftDisplay.drawString("Done", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
+  tftDisplay.drawString("Storing results...", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
+  WriteMeasurementFile();
+  tftDisplay.drawString("Updating results HTML...", textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
+  WriteResultsHTML(LittleFS);  
+}
+//
+// measure all tires/positions until Done selected
+//
+void MeasureAllTireTemps()
+{
+  unsigned long curTime = millis();
+  unsigned long priorTime = millis();
+  char outStr[255];
+  char padStr[3];
+  int selTire = 0;
+  bool startMeasure = false;
+  bool measureDone = false;
+  int row = 0;
+  int col = 0;
+
+  float maxTemp = 0.0F;
+  float minTemp = 999.0F;
+  // initial clear of screen
+  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+  {
+    for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
+    {
+      tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] = 0.0F;
+    }
+  }
+
+  tftDisplay.fillScreen(TFT_WHITE);
+  YamuraBanner();
+  SetFont(deviceSettings.fontPoints);
+  while(true)
+  {
+    //sprintf(outStr, "%s", cars[selectedCar].carName);
+    tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
+    //tftDisplay.drawString(outStr, 5, 0, GFXFF);
+
+    if(!startMeasure)
+    {
+      // tires
+      for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
+      {
+        // tires
+        col = (idxTire % 2);
+        maxTemp = 0.0F;
+        minTemp = 999.0F;
+        for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
+        {
+          maxTemp = tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] > maxTemp ? tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] : maxTemp;
+          minTemp = tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] < minTemp ? tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] : minTemp;
+        }
+      }
+      // do measurements for tire
+      if(selTire < cars[selectedCar].tireCount)
+      {
+        int nextDirection = MeasureTireTemps(selTire);
+        selTire = GetNextTire(selTire, nextDirection);
+        if(selTire ==  cars[selectedCar].tireCount)
+        {
+          break;
+        }
         continue;
       }
     }
@@ -2686,10 +2889,10 @@ void MeasureAllTireTemps()
       break;
     }
   }
-  tftDisplay.fillScreen(TFT_BLACK);
+  tftDisplay.fillScreen(TFT_WHITE);
   YamuraBanner();
   SetFont(deviceSettings.fontPoints);
-  tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
   // location of text
   textPosition[0] = 5;
   textPosition[1] = 0;
@@ -2701,6 +2904,7 @@ void MeasureAllTireTemps()
   tftDisplay.drawString("Updating results HTML...", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
   WriteResultsHTML(LittleFS);  
+  DisplayAllTireTemps(cars[selectedCar]);
 }
 //
 // move to next tire after measurement of a tire is complete, 
@@ -2753,7 +2957,7 @@ void DrawCellText(int row, int col, char* outStr, uint16_t textColor, uint16_t b
   }
   tftDisplay.setTextColor(textColor, backColor);
   tftDisplay.drawString(outStr, cellPoint[row][col][0], cellPoint[row][col][1], GFXFF);
-  tftDisplay.setTextColor(TFT_WHITE, TFT_BLACK);
+  tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
 }
 //
 // rotate display for right or left hand use
@@ -2761,7 +2965,7 @@ void DrawCellText(int row, int col, char* outStr, uint16_t textColor, uint16_t b
 void RotateDisplay(bool rotateButtons)
 {
   tftDisplay.setRotation(deviceSettings.screenRotation == 0 ? 1 : 3);
-  tftDisplay.fillScreen(TFT_BLACK);
+  tftDisplay.fillScreen(TFT_WHITE);
   if(rotateButtons)
   {
     int reverseButtons[BUTTON_COUNT];
@@ -2778,7 +2982,70 @@ void RotateDisplay(bool rotateButtons)
 //
 // wait until temperature at probe stabilizes
 //
-float GetStableTemp(int row, int col)
+float GetStableTemp(int positionIdx, int row, int col)
+{
+  Serial.println("Start GetStableTemp");
+  char outStr[512];
+  float minMax[2] = {5000.0, -5000.0};
+  float devRange[2] = {-0.25, 0.25};
+  float averageTemp = 0;
+  bool rVal = true;
+  float temperature;
+  int countTemperature = 0;
+  // convert deviation band to F if needed
+  if(deviceSettings.tempUnits == 0)
+  {
+    for(int idx = 0; idx < 2; idx++)
+    {
+      devRange[idx] = FtoCRelative(devRange[idx]);
+    }
+  }
+
+  for(int idx = 0; idx < TEMP_BUFFER; idx++)
+  {
+    tempValues[idx] = -100.0;
+  }
+  while(true)
+  {
+    temperature = Thermo_GetTemp();
+    sprintf(outStr, "        %0.2f        ", temperature);
+    // draw current temp
+    tftDisplay.setFreeFont(FSS24); // max font
+    tftDisplay.drawString(outStr, row, col, GFXFF);      
+    SetFont(deviceSettings.fontPoints);
+    // get average temp in circular buffer
+    if(countTemperature >= TEMP_BUFFER)
+    {
+      countTemperature = 0;
+    }
+    tempValues[countTemperature] = temperature;
+    countTemperature++;
+    averageTemp = 0.0;
+    for(int idx = 0; idx < TEMP_BUFFER; idx++)
+    {
+      averageTemp += tempValues[idx];
+    }
+    averageTemp = averageTemp / (float)TEMP_BUFFER;
+    // check deviations, exit if within +/- 0.25
+    minMax[0] = 5000.0;  
+    minMax[1] = -5000.0;
+    for(int idx = 0; idx < TEMP_BUFFER; idx++)
+    {
+      minMax[0] = (averageTemp - tempValues[idx]) < minMax[0] ? (averageTemp - tempValues[idx]) : minMax[0];
+      minMax[1] = (averageTemp - tempValues[idx]) > minMax[1] ? (averageTemp - tempValues[idx]) : minMax[1];
+    }
+    if(((minMax[1] - minMax[0]) >= devRange[0]) &&
+       ((minMax[1] - minMax[0]) <=  devRange[1]))
+    {
+      break;
+    }
+    delay(500);
+  }
+  return averageTemp;
+}//
+// wait until temperature at probe stabilizes
+//
+float GetStableTempGrid(int row, int col)
 {
   char outStr[512];
   float minMax[2] = {5000.0, -5000.0};
@@ -2841,7 +3108,7 @@ float GetStableTemp(int row, int col)
 //
 void YamuraBanner()
 {
-  tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
+  tftDisplay.setTextColor(TFT_BLACK, TFT_RED);
   SetFont(9);
   int xPos = tftDisplay.width()/2;
   int yPos = tftDisplay.height() - fontHeight/2;
@@ -2866,7 +3133,7 @@ void SetFont(int fontSize)
       tftDisplay.setFreeFont(FSS18);
       break;
     case 24:
-      tftDisplay.setFreeFont(FSS18);
+      tftDisplay.setFreeFont(FSS24); // was FSS18
       break;
     default:
       tftDisplay.setFreeFont(FSS12);
