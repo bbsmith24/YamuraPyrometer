@@ -36,7 +36,7 @@
 #include "RTClib.h"              // PCF8563 RTC library https://github.com/adafruit/RTClib
 
 // uncomment for debug to serial monitor (use #ifdef...#endif around debug output prints)
-//#define DEBUG_VERBOSE
+#define DEBUG_VERBOSE
 //#define DEBUG_EXTRA_VERBOSE
 //#define DEBUG_HTML
 //#define SET_TO_SYSTEM_TIME
@@ -202,16 +202,16 @@ void setup();
 void loop();
 // user interface
 // menu generators call MenuSelect with the list of selections and returned state
-// set date/time is a special one for setting individual values in a date/time string display
-void DisplayMainMenu();
+void MainMenu();
 void SelectCarMenu();
-void DisplaySelectedResultsMenu(fs::FS &fs, const char * path);
+void SelectedResultsMenu(fs::FS &fs, const char * path);
 void ChangeSettingsMenu();
 void Select12or24Menu();
 void SelectFontSizeMenu();
 void SetUnitsMenu();
 void DeleteDataFilesMenu(bool verify = true);
 int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSelect);
+// set date/time values
 void SetDateTime();
 // read, write, generate HTML for setup files and results
 void ReadCarSetupFile(fs::FS &fs, const char * path);
@@ -225,24 +225,24 @@ void ReadMeasurementFile(char buf[], CarSettings &currentResultCar);
 void WriteMeasurementFile();
 
 // measure and display tire temps, TFT specific functions
-// grid version of tire temp measure
-void MeasureAllTireTempsGrid();
-int MeasureTireTempsGrid(int tire); // measure single tire temps displaying in grid
-float GetStableTempGrid(int row, int col);
 // single tire version of tire temp measure
 void MeasureAllTireTemps();
 int MeasureTireTemps(int tire); // measure single tire temps full screen
 float GetStableTemp(int row, int col);
-
+int GetNextTire(int selTire, int nextDirection);
+// current probe temp
 void InstantTemp();
+// display results
 void DrawTireMeasureGrid(int tireCount);
 void SetupTireMeasureGrid(int fontHeight);
 void DisplayAllTireTemps(CarSettings currentResultCar);
-int GetNextTire(int selTire, int nextDirection);
 void DrawCellText(int row, int col, char* text, uint16_t textColor, uint16_t backColor);
+// rotate display (right/left hand orientation)
 void RotateDisplay(bool rotateButtons);
-void YamuraBanner();
+// set font size
 void SetFont(int fontSize);
+// banner
+void YamuraBanner();
 
 // 'common' functions defined in this file
 // temperature functions

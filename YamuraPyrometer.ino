@@ -508,7 +508,7 @@ void loop()
   switch (deviceState)
   {
     case DISPLAY_MENU:
-      DisplayMainMenu();
+      MainMenu();
       break;
     case SELECT_CAR:
       SelectCarMenu();
@@ -525,7 +525,7 @@ void loop()
     case DISPLAY_SELECTED_RESULT:
       char outStr[128];
       sprintf(outStr, "/py_temps_%d.txt", selectedCar);
-      DisplaySelectedResultsMenu(SD, outStr);
+      SelectedResultsMenu(SD, outStr);
       deviceState = DISPLAY_MENU;
       break;
     case CHANGE_SETTINGS:
@@ -546,7 +546,7 @@ void loop()
 //
 // main menu - car select, start measurement, etc
 //
-void DisplayMainMenu()
+void MainMenu()
 {
   int menuCount = 6;
   MenuChoice mainMenuChoices[6];  
@@ -579,7 +579,7 @@ void SelectCarMenu()
 //
 // display all results for a selected car
 //
-void DisplaySelectedResultsMenu(fs::FS &fs, const char * path)
+void SelectedResultsMenu(fs::FS &fs, const char * path)
 {
   char buf[512];
   CarSettings currentResultCar;
@@ -2134,90 +2134,6 @@ void ReadMeasurementFile(char buf[], CarSettings &currentResultCar)
 }
 
 // TIRE TEMPERATURE MEASUREMENT AND DISPLAY
-
-//
-// measure temperatures on a single tire
-//
-int MeasureTireTempsGrid(int tireIdx)
-{
-  char outStr[512];
-  // location of text
-  textPosition[0] = 5;
-  textPosition[1] = 0;
-  int row = 0;
-  int col = 0;
-  bool armed = false;
-  // measure location - O, M, I
-  measIdx = 0;  
-  // reset tire temps to 0.0
-  for(int idx = 0; idx < cars[selectedCar].positionCount; idx++)
-  {
-    tireTemps[(tireIdx * cars[selectedCar].positionCount) + idx] = 0.0;
-  }
-  armed = false;
-  unsigned long priorTime = millis();
-  unsigned long curTime = millis();
-  // text position on screen
-  // measuring until all positions are measured
-  bool drawStars = true;
-  while(measIdx < cars[selectedCar].positionCount)
-  {
-    if(drawStars)
-    {
-      row = ((tireIdx / 2) * 2) + 1;
-      col = measIdx + ((tireIdx % 2) * 3);
-      DrawCellText(row, 
-                   col, 
-                   "****", 
-                   TFT_BLACK,
-                   TFT_WHITE);
-      drawStars = false;
-    }
-    // get time and process buttons for press/release
-    curTime = millis();
-    CheckButtons(curTime);
-    // button 0 release arms probe
-    // prior to arm, display ****, after display temp as it stabilizes
-    if (buttons[0].buttonReleased)
-    {
-      armed = true;
-      buttons[0].buttonReleased = false;
-    }
-    // check for button 1 or 2 release (tire selection) before measure starts
-    else if (((buttons[1].buttonReleased) || (buttons[2].buttonReleased))  && (measIdx == 0))
-    {
-      // erase stars in first measure position
-      DrawCellText(row, 
-                   col, 
-                   "****", 
-                   TFT_BLACK,
-                   TFT_BLACK);
-
-      int rVal = buttons[1].buttonReleased == true ? 1 : -1;
-      for(int btnIdx = 1; btnIdx < BUTTON_COUNT; btnIdx++)
-      {
-        buttons[btnIdx].buttonReleased = false;
-      }
-      return rVal;
-    }
-    // if not armed continue
-    if(!armed)
-    {
-      curTime = millis();
-      continue;
-    }
-    // get stable temp after arming
-    row = ((tireIdx / 2) * 2) + 1;
-    col = measIdx + ((tireIdx % 2) * 3);
-    tireTemps[(tireIdx * cars[selectedCar].positionCount) + measIdx] = GetStableTempGrid(row, col);
-    // disarm after stable temp
-    armed = false;
-    // next position
-    measIdx++;
-    drawStars = true;
-  }
-  return 1;
-}
 //
 // measure temperatures on a single tire
 //
@@ -2591,202 +2507,6 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
   }
 }
 //
-// measure all tires/positions in grid until Done selected
-//
-void MeasureAllTireTempsGrid()
-{
-  unsigned long curTime = millis();
-  unsigned long priorTime = millis();
-  char outStr[255];
-  char padStr[3];
-  int selTire = 0;
-  bool startMeasure = false;
-  bool measureDone = false;
-  int row = 0;
-  int col = 0;
-
-  float maxTemp = 0.0F;
-  float minTemp = 999.0F;
-  // initial clear of screen
-  for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
-  {
-    for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
-    {
-      tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] = 0.0F;
-    }
-  }
-
-  tftDisplay.fillScreen(TFT_WHITE);
-  YamuraBanner();
-  DrawTireMeasureGrid(cars[selectedCar].tireCount);
-  SetFont(deviceSettings.fontPoints <= 12 ? deviceSettings.fontPoints : 12);
-  while(true)
-  {
-    sprintf(outStr, "%s", cars[selectedCar].carName);
-    tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
-    tftDisplay.drawString(outStr, 5, 0, GFXFF);
-
-    if(!startMeasure)
-    {
-      row = cars[selectedCar].tireCount;
-      col = 0;
-
-      // done button
-      if(selTire < cars[selectedCar].tireCount)
-      {
-        DrawCellText(row, col, "DONE", TFT_BLACK, TFT_WHITE);
-      }
-      else
-      {
-        break;
-        //DrawCellText(row, col, "DONE", TFT_BLACK, TFT_YELLOW);
-      }
-      // tires
-      for(int idxTire = 0; idxTire < cars[selectedCar].tireCount; idxTire++)
-      {
-        // tires
-        col = (idxTire % 2);
-        maxTemp = 0.0F;
-        minTemp = 999.0F;
-        for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
-        {
-          maxTemp = tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] > maxTemp ? tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] : maxTemp;
-          minTemp = tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] < minTemp ? tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] : minTemp;
-        }
-        for(int tirePosIdx = 0; tirePosIdx < cars[selectedCar].positionCount; tirePosIdx++)
-        {
-          sprintf(padStr, "  ");
-          if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] >= 100.0F)
-          {
-            padStr[0] = '\0';
-          }
-          else if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] >= 10.0F)
-          {
-            sprintf(padStr, " ");
-          }
-		      // draw tire position name
-		      row = ((idxTire / 2) * 2);
-		      col = tirePosIdx + ((idxTire % 2) * 3);
-          if(tirePosIdx == 0)
-          {
-            sprintf(outStr, "%s %s", cars[selectedCar].tireShortName[idxTire],
-                                   cars[selectedCar].positionShortName[tirePosIdx]);
-          }
-          else
-          {
-            sprintf(outStr, "%s", cars[selectedCar].positionShortName[tirePosIdx]);
-          }
-          if(idxTire == selTire)
-          {
-            // full background highlight rectangle
-            if(tirePosIdx == 0)
-            {
-              int rectCol = col <= 2 ? 0 : 5;
-              tftDisplay.fillRect(cellPoint[row][rectCol][0], cellPoint[row][rectCol][1], 220, fontHeight - 5, TFT_YELLOW);
-            }
-            DrawCellText(row, col, outStr, TFT_BLACK, TFT_YELLOW);
-          }
-          else
-          {
-            if(tirePosIdx == 0)
-            {
-              int rectCol = col <= 2 ? 0 : 5;
-              tftDisplay.fillRect(cellPoint[row][rectCol][0], cellPoint[row][rectCol][1], 220, fontHeight - 5, TFT_WHITE);
-            }
-            DrawCellText(row, col, outStr, TFT_BLACK, TFT_WHITE);
-          }
-          // draw tire temp
-		      row++;
-          sprintf(outStr, "%3.1F", tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx]);
-          //
-          if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] != 0.0F)
-          {
-            if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] >= maxTemp)
-            {
-              DrawCellText(row, col, outStr, TFT_WHITE, TFT_RED);
-            }
-            else if(tireTemps[(idxTire * cars[selectedCar].positionCount) + tirePosIdx] <= minTemp)
-            {
-              DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLUE);
-            }
-            else
-            {
-              DrawCellText(row, col, outStr, TFT_BLACK, TFT_WHITE);
-            }
-          }
-        }
-      }
-      // do measurements for tire
-      if(selTire < cars[selectedCar].tireCount)
-      {
-        int nextDirection = MeasureTireTemps(selTire);
-        selTire = GetNextTire(selTire, nextDirection);
-        continue;
-      }
-    }
-    priorTime = curTime;
-    startMeasure = false;
-    measureDone = false;
-    while(true)
-    {
-      curTime = millis();
-      CheckButtons(curTime);
-      // select button released, go to next tire
-      if(selTire == cars[selectedCar].tireCount)
-      {
-          measureDone = true;
-          break;
-      }
-      if (buttons[0].buttonReleased)
-      {
-        if(selTire < cars[selectedCar].tireCount)
-        {
-          startMeasure = true;
-        }
-        else
-        {
-          measureDone = true;
-        }
-        buttons[0].buttonReleased = false;
-        break;
-      }
-      // cancel button released, return
-      else if (buttons[1].buttonReleased)
-      {
-        selTire = GetNextTire(selTire, 1);
-        buttons[1].buttonReleased = false;
-        break;
-      }
-      else if ((buttons[2].buttonReleased)) 
-      {
-        selTire = GetNextTire(selTire, -1);
-        buttons[2].buttonReleased = false;
-        break;
-      }
-      delay(50);
-    }
-    if(measureDone)
-    {
-      break;
-    }
-  }
-  tftDisplay.fillScreen(TFT_WHITE);
-  YamuraBanner();
-  SetFont(deviceSettings.fontPoints);
-  tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
-  // location of text
-  textPosition[0] = 5;
-  textPosition[1] = 0;
-  tftDisplay.drawString("Done", textPosition[0], textPosition[1], GFXFF);
-  textPosition[1] += fontHeight;
-  tftDisplay.drawString("Storing results...", textPosition[0], textPosition[1], GFXFF);
-  textPosition[1] += fontHeight;
-  WriteMeasurementFile();
-  tftDisplay.drawString("Updating results HTML...", textPosition[0], textPosition[1], GFXFF);
-  textPosition[1] += fontHeight;
-  WriteResultsHTML(LittleFS);  
-}
-//
 // measure all tires/positions until Done selected
 //
 void MeasureAllTireTemps()
@@ -3013,66 +2733,6 @@ float GetStableTemp(int positionIdx, int row, int col)
     tftDisplay.setFreeFont(FSS24); // max font
     tftDisplay.drawString(outStr, row, col, GFXFF);      
     SetFont(deviceSettings.fontPoints);
-    // get average temp in circular buffer
-    if(countTemperature >= TEMP_BUFFER)
-    {
-      countTemperature = 0;
-    }
-    tempValues[countTemperature] = temperature;
-    countTemperature++;
-    averageTemp = 0.0;
-    for(int idx = 0; idx < TEMP_BUFFER; idx++)
-    {
-      averageTemp += tempValues[idx];
-    }
-    averageTemp = averageTemp / (float)TEMP_BUFFER;
-    // check deviations, exit if within +/- 0.25
-    minMax[0] = 5000.0;  
-    minMax[1] = -5000.0;
-    for(int idx = 0; idx < TEMP_BUFFER; idx++)
-    {
-      minMax[0] = (averageTemp - tempValues[idx]) < minMax[0] ? (averageTemp - tempValues[idx]) : minMax[0];
-      minMax[1] = (averageTemp - tempValues[idx]) > minMax[1] ? (averageTemp - tempValues[idx]) : minMax[1];
-    }
-    if(((minMax[1] - minMax[0]) >= devRange[0]) &&
-       ((minMax[1] - minMax[0]) <=  devRange[1]))
-    {
-      break;
-    }
-    delay(500);
-  }
-  return averageTemp;
-}//
-// wait until temperature at probe stabilizes
-//
-float GetStableTempGrid(int row, int col)
-{
-  char outStr[512];
-  float minMax[2] = {5000.0, -5000.0};
-  float devRange[2] = {-0.25, 0.25};
-  float averageTemp = 0;
-  bool rVal = true;
-  float temperature;
-  int countTemperature = 0;
-  // convert deviation band to F if needed
-  if(deviceSettings.tempUnits == 0)
-  {
-    for(int idx = 0; idx < 2; idx++)
-    {
-      devRange[idx] = FtoCRelative(devRange[idx]);
-    }
-  }
-
-  for(int idx = 0; idx < TEMP_BUFFER; idx++)
-  {
-    tempValues[idx] = -100.0;
-  }
-  while(true)
-  {
-    temperature = Thermo_GetTemp();
-    // draw current temp in cell
-    sprintf(outStr, "%0.1F", temperature);
-    DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLACK);
     // get average temp in circular buffer
     if(countTemperature >= TEMP_BUFFER)
     {
