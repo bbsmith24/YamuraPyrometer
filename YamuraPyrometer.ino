@@ -2446,7 +2446,7 @@ int MeasureTireTemps(int tireIdx)
       tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);      
       textPosition[1] += 2* fontHeight;
 
-      sprintf(outStr,"        ****        ");
+      sprintf(outStr,"        ****                ");
       tftDisplay.setFreeFont(FSS24); // max font
       tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);      
       SetFont(deviceSettings.fontPoints);
