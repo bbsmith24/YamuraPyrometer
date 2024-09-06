@@ -49,7 +49,6 @@ void setup()
   // set up tft display
   tftDisplay.init();
   tftDisplay.invertDisplay(false);
-  //tftDisplay.invertDisplay(true);
   RotateDisplay(true);  
   int w = tftDisplay.width();
   int h = tftDisplay.height();
@@ -59,7 +58,6 @@ void setup()
   // 1 landscape pins right
   // 2 portrait pins up
   // 3 landscape pins left
-  //tftDisplay.fillScreen(TFT_BLACK);
   tftDisplay.fillScreen(TFT_WHITE);
   YamuraBanner();
   SetFont(deviceSettings.fontPoints);
@@ -172,20 +170,20 @@ void setup()
   delay(1000);
   //textPosition[1] += fontHeight;
   ReadDeviceSetupFile(SD,  "/py_set.txt");
-  //WriteDeviceSetupHTML(SD, "/py_set.html");
-  WriteDeviceSetupHTML(LittleFS, "/py_set.html");
+  WriteDeviceSetupHTML(SD, "/py_set.html");
+  //WriteDeviceSetupHTML(LittleFS, "/py_set.html");
 
   tftDisplay.drawString("Read cars setup          ", textPosition[0], textPosition[1], GFXFF);
   delay(1000);
   //textPosition[1] += fontHeight;
   ReadCarSetupFile(SD,  "/py_cars.txt");
-  //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
-  WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+  WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
+  //WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
 
   tftDisplay.drawString("Write results to HTML    ", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
-  //WriteResultsHTML(SD);
-  WriteResultsHTML(LittleFS);
+  WriteResultsHTML(SD);
+  //WriteResultsHTML(LittleFS);
 
   #ifdef HAS_RTC
   // get time from RTC
@@ -210,10 +208,10 @@ void setup()
     #ifdef DEBUG_VERBOSE
     Serial.println("HTTP_GET, send /py_main.html from LittleFS");
     #endif
-    request->send(LittleFS, "/py_main.html", "text/html");
+    request->send(/*LittleFS*/SD, "/py_main.html", "text/html");
   });
   
-  server.serveStatic("/", LittleFS, "/");
+  server.serveStatic("/", /*LittleFS*/SD, "/");
   server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) 
   {
     #ifdef DEBUG_VERBOSE
@@ -332,7 +330,7 @@ void setup()
         }
         continue;
       }
-      // screenRotation  0 = R, 1 = L
+      // screenRotation 0 = R, 1 = L
       if (strcmp(p->name().c_str(), "orientation_id") == 0)
       {
         tempDevice.screenRotation = 1;
@@ -340,6 +338,25 @@ void setup()
         {
           tempDevice.screenRotation = 0;
         }
+        continue;
+      }
+      // stable temp bandwidth
+      if (strcmp(p->name().c_str(), "bandwidth_id") == 0)
+      {
+        tempDevice.stableBand[0] = atof(p->value().c_str()) / -2.0;
+        tempDevice.stableBand[1] = atof(p->value().c_str()) /  2.0;
+        continue;
+      }
+      // stable temp bandwidth
+      if (strcmp(p->name().c_str(), "stabledelay_id") == 0)
+      {
+        tempDevice.stableDelay = atoi(p->value().c_str());
+        continue;
+      }
+      // stable temp buffer
+      if (strcmp(p->name().c_str(), "stablebuffer_id") == 0)
+      {
+        tempDevice.stableBuffer = atoi(p->value().c_str());
         continue;
       }
       // is12Hour true for 12 hour clock, false for 24 hour clock
@@ -392,7 +409,7 @@ void setup()
             strcpy(cars[carSetupIdx].positionShortName[posIdx], tempCar.positionShortName[posIdx]);
           }
           WriteCarSetupFile(SD, "/py_cars.txt");
-          WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+          //WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
           //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
         }
         else if ((strcmp(p->name().c_str(), "new") == 0))
@@ -428,7 +445,7 @@ void setup()
           strcpy(cars[carCount - 1].positionShortName[2], "-");
           strcpy(cars[carCount - 1].positionLongName[2], "-");
           WriteCarSetupFile(SD, "/py_cars.txt");
-          WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+          //WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
           //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
         }
         else if ((strcmp(p->name().c_str(), "delete") == 0))
@@ -444,25 +461,25 @@ void setup()
             cars = static_cast<CarSettings*>(mem);
           }
           WriteCarSetupFile(SD, "/py_cars.txt");
-          WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+          //WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
           //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
         }
         // buttons
         if (strcmp(p->name().c_str(), "next") == 0)
         {
           carSetupIdx = carSetupIdx + 1 < carCount ? carSetupIdx + 1 : carCount - 1;
-          WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
-          //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
-          request->send(LittleFS, "/py_cars.html", "text/html");
+          //WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+          WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
+          request->send(/*LittleFS*/SD, "/py_cars.html", "text/html");
         }
         if (strcmp(p->name().c_str(), "prior") == 0)
         {
           carSetupIdx = carSetupIdx - 1 >= 0 ? carSetupIdx - 1 : 0;
-          WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
-          //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
-          request->send(LittleFS, "/py_cars.html", "text/html");
+          //WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
+          WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
+          request->send(/*LittleFS*/SD, "/py_cars.html", "text/html");
         }
-        request->send(LittleFS, "/py_cars.html", "text/html");
+        request->send(/*LittleFS*/SD, "/py_cars.html", "text/html");
       }
       else if (pageSource == 2)
       {
@@ -472,18 +489,25 @@ void setup()
           strcpy(deviceSettings.ssid, tempDevice.ssid);
           strcpy(deviceSettings.pass , tempDevice.pass);
           deviceSettings.tempUnits = tempDevice.tempUnits;
-          deviceSettings.screenRotation = tempDevice.screenRotation;
+          if(deviceSettings.screenRotation != tempDevice.screenRotation)
+          {
+            deviceSettings.screenRotation = tempDevice.screenRotation;
+            RotateDisplay(true);
+          }
+          deviceSettings.stableBand[0] = tempDevice.stableBand[0];
+          deviceSettings.stableBand[1] = tempDevice.stableBand[1];
+          deviceSettings.stableDelay = tempDevice.stableDelay;
           deviceSettings.is12Hour = tempDevice.is12Hour;
           deviceSettings.fontPoints = tempDevice.fontPoints;
           WriteDeviceSetupFile(SD, "/py_set.txt");
-          WriteDeviceSetupHTML(LittleFS, "/py_set.html");
-          //WriteDeviceSetupHTML(SD, "/py_set.html");
-          request->send(LittleFS, "/py_set.html", "text/html");
+          //WriteDeviceSetupHTML(LittleFS, "/py_set.html");
+          WriteDeviceSetupHTML(SD, "/py_set.html");
+          request->send(/*LittleFS*/SD, "/py_set.html", "text/html");
         }
       }
       else
       {
-        request->send(LittleFS, "/py_main.html", "text/html");
+        request->send(/*LittleFS*/SD, "/py_main.html", "text/html");
       }
     }
   });
@@ -524,7 +548,7 @@ void loop()
       break;
     case DISPLAY_SELECTED_RESULT:
       char outStr[128];
-      sprintf(outStr, "/py_temps_%d.txt", selectedCar);
+      sprintf(outStr, "/py_temps_%d.txt", cars[selectedCar].carID);
       SelectedResultsMenu(SD, outStr);
       deviceState = DISPLAY_MENU;
       break;
@@ -662,9 +686,9 @@ void SelectedResultsMenu(fs::FS &fs, const char * path)
 //
 void ChangeSettingsMenu()
 {
-  int menuCount = 10;
+  int menuCount = 12;
   int result =  0;
-  MenuChoice settingsChoices[10];
+  MenuChoice settingsChoices[13];
   char buf[512];
 
   while(true)
@@ -680,21 +704,35 @@ void ChangeSettingsMenu()
     {
       settingsChoices[SET_FLIPDISPLAY].description = "Switch to Right Hand (invert screen)"; settingsChoices[SET_FLIPDISPLAY].result = SET_FLIPDISPLAY;      
     }
-    settingsChoices[SET_FONTSIZE].description = "Font size";             settingsChoices[SET_FONTSIZE].result = SET_FONTSIZE;
-    settingsChoices[SET_12H24H].description = "12 or 24 hour clock";     settingsChoices[SET_12H24H].result = SET_12H24H;
-
-
-    settingsChoices[SET_DELETEDATA].description = "Delete Data";   settingsChoices[SET_DELETEDATA].result = SET_DELETEDATA;
+    // font size
+    settingsChoices[SET_FONTSIZE].description = "Font size";
+    settingsChoices[SET_FONTSIZE].result = SET_FONTSIZE;
+    // 12 or 24 hour clock display
+    settingsChoices[SET_12H24H].description = "12 or 24 hour clock";
+    settingsChoices[SET_12H24H].result = SET_12H24H;
+    // temperature stabilization bandwidth
+    settingsChoices[SET_STABLEBAND].description = "Temp stablization bandwidth";
+    settingsChoices[SET_STABLEBAND].result = SET_STABLEBAND;
+    // temperature stabilization delay
+    settingsChoices[SET_STABLEDELAY].description = "Temp stablization delay";
+    settingsChoices[SET_STABLEDELAY].result = SET_STABLEDELAY;
+    // delete data
+    settingsChoices[SET_DELETEDATA].description = "Delete Data";
+    settingsChoices[SET_DELETEDATA].result = SET_DELETEDATA;
     // IP address
     sprintf(buf, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
-    settingsChoices[SET_IPADDRESS].description = buf;             settingsChoices[SET_IPADDRESS].result = SET_IPADDRESS;
+    settingsChoices[SET_IPADDRESS].description = buf;
+    settingsChoices[SET_IPADDRESS].result = SET_IPADDRESS;
     // password
     sprintf(buf, "Pass %s", deviceSettings.pass);
-    settingsChoices[SET_PASS].description = buf;             settingsChoices[SET_PASS].result = SET_PASS;
+    settingsChoices[SET_PASS].description = buf;
+    settingsChoices[SET_PASS].result = SET_PASS;
     // save
-    settingsChoices[SET_SAVESETTINGS].description = "Save Settings"; settingsChoices[SET_SAVESETTINGS].result = SET_SAVESETTINGS;
+    settingsChoices[SET_SAVESETTINGS].description = "Save Settings";
+    settingsChoices[SET_SAVESETTINGS].result = SET_SAVESETTINGS;
     // exit settings
-    settingsChoices[SET_EXIT].description = "Exit";          settingsChoices[SET_EXIT].result = SET_EXIT;
+    settingsChoices[SET_EXIT].description = "Exit";
+    settingsChoices[SET_EXIT].result = SET_EXIT;
     result = MenuSelect(deviceSettings.fontPoints, settingsChoices, menuCount, 0); 
     switch(result)
     {
@@ -703,6 +741,15 @@ void ChangeSettingsMenu()
         break;
       case SET_TEMPUNITS:
         SetUnitsMenu();
+        break;
+      case SET_STABLEBAND:
+        SetStableBandwidthMenu();
+        break;
+      case SET_STABLEDELAY:
+        SetStableDelayMenu();
+        break;
+      case SET_STABLEBUFFER:
+        SetStableBufferMenu();
         break;
       case SET_DELETEDATA:
         DeleteDataFilesMenu();
@@ -719,6 +766,8 @@ void ChangeSettingsMenu()
         break;
       case SET_SAVESETTINGS:
         WriteDeviceSetupFile(SD, "/py_set.txt");
+        WriteDeviceSetupHTML(SD, "/py_set.html");
+        //WriteDeviceSetupHTML(LittleFS, "/py_set.html");
         break;
       case SET_IPADDRESS:
         break;
@@ -798,6 +847,198 @@ void SetUnitsMenu()
   deviceSettings.tempUnits = menuResult == 1;
 }
 //
+// get stable temperature bandwidth
+// up to increase by .25, down to decrease by .25, select to save.
+// can't go below 0.5 degrees
+// really will be easier to set in HTML, but this will do for quick adjustments
+//
+void SetStableBandwidthMenu()
+{
+  char outStr[128];
+  // reset buttons
+  for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+  {
+    buttons[btnIdx].buttonReleased = false;
+  }
+  // erase screen, draw banner
+  tftDisplay.fillScreen(TFT_WHITE);
+  YamuraBanner();
+  // display title
+  SetFont(deviceSettings.fontPoints);
+  // display menu
+  textPosition[0] = 5;
+  textPosition[1] = 0;
+  sprintf(outStr, "Temperature stabilization bandwidth:");
+  tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+
+  textPosition[1] += fontHeight;
+  sprintf(outStr, "\t%f", deviceSettings.stableBand[1] * 2.0);
+  tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+  unsigned long currentMillis = millis();
+  while(true)
+  {
+    currentMillis = millis();
+    CheckButtons(currentMillis);
+    // selection made, set state and break
+    if(buttons[0].buttonReleased)
+    {
+      buttons[0].buttonReleased = false;
+      return;
+    }
+    // down button, decrease bandwidth by .5
+    else if(buttons[1].buttonReleased)
+    {
+      buttons[1].buttonReleased = false;
+      if(deviceSettings.stableBand[1] - 0.25 <= 0.25)
+      {
+        continue;
+      }
+      deviceSettings.stableBand[0] += 0.25;
+      deviceSettings.stableBand[1] -= 0.25;
+      sprintf(outStr, "\t%f", deviceSettings.stableBand[1] * 2.0);
+      tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+    }      
+    // up button, increase bandwidth by .5
+    else if(buttons[2].buttonReleased)
+    {
+      buttons[2].buttonReleased = false;
+      deviceSettings.stableBand[0] -= 0.25;
+      deviceSettings.stableBand[1] += 0.25;
+      sprintf(outStr, "\t%f", deviceSettings.stableBand[1] * 2.0);
+      tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+    }
+    delay(100);
+  }
+}
+//
+// set delay time between stabilization measurements
+// 
+void SetStableDelayMenu()
+{
+  char outStr[128];
+  // reset buttons
+  for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+  {
+    buttons[btnIdx].buttonReleased = false;
+  }
+  // erase screen, draw banner
+  tftDisplay.fillScreen(TFT_WHITE);
+  YamuraBanner();
+  // display title
+  SetFont(deviceSettings.fontPoints);
+  // display menu
+  textPosition[0] = 5;
+  textPosition[1] = 0;
+  sprintf(outStr, "Temperature stabilization delay:");
+  tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
+  sprintf(outStr, "\t%ld", deviceSettings.stableDelay);
+  tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+  unsigned long currentMillis = millis();
+  while(true)
+  {
+    currentMillis = millis();
+    CheckButtons(currentMillis);
+    // selection made, set state and break
+    if(buttons[0].buttonReleased)
+    {
+      buttons[0].buttonReleased = false;
+      return;
+    }
+    // down button, decrease bandwidth by .5
+    else if(buttons[1].buttonReleased)
+    {
+      buttons[1].buttonReleased = false;
+      if(deviceSettings.stableDelay <= 500)
+      {
+        continue;
+      }
+      deviceSettings.stableDelay -= 100;
+      sprintf(outStr, "\t%ld", deviceSettings.stableDelay);
+      tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+    }      
+    // up button, increase bandwidth by .5
+    else if(buttons[2].buttonReleased)
+    {
+      buttons[2].buttonReleased = false;
+      deviceSettings.stableDelay += 100;
+      sprintf(outStr, "\t%ld", deviceSettings.stableDelay);
+      tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+    }
+    delay(100);
+  }
+}
+//
+// set delay time between stabilization measurements
+// 
+void SetStableBufferMenu()
+{
+  char outStr[128];
+  // reset buttons
+  for(int btnIdx = 0; btnIdx < BUTTON_COUNT; btnIdx++)
+  {
+    buttons[btnIdx].buttonReleased = false;
+  }
+  // erase screen, draw banner
+  tftDisplay.fillScreen(TFT_WHITE);
+  YamuraBanner();
+  // display title
+  SetFont(deviceSettings.fontPoints);
+  // display menu
+  textPosition[0] = 5;
+  textPosition[1] = 0;
+  sprintf(outStr, "Temperature buffer:");
+  tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
+  sprintf(outStr, "\t%ld", deviceSettings.stableBuffer);
+  tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+  unsigned long currentMillis = millis();
+  while(true)
+  {
+    currentMillis = millis();
+    CheckButtons(currentMillis);
+    // selection made, set state and break
+    if(buttons[0].buttonReleased)
+    {
+      buttons[0].buttonReleased = false;
+      return;
+    }
+    // down button, decrease bandwidth by .5
+    else if(buttons[1].buttonReleased)
+    {
+      buttons[1].buttonReleased = false;
+      if(deviceSettings.stableBuffer <= 5)
+      {
+        continue;
+      }
+      deviceSettings.stableDelay -= 1;
+      sprintf(outStr, "\t%ld", deviceSettings.stableBuffer);
+      tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+    }      
+    // up button, increase bandwidth by .5
+    else if(buttons[2].buttonReleased)
+    {
+      buttons[2].buttonReleased = false;
+      deviceSettings.stableBuffer += 1;
+      sprintf(outStr, "\t%ld", deviceSettings.stableBuffer);
+      tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
+      tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+    }
+    delay(100);
+  }
+}
+//
 // delete data files menu (Yes or No)
 //
 void DeleteDataFilesMenu(bool verify)
@@ -826,7 +1067,7 @@ void DeleteDataFilesMenu(bool verify)
     }
     DeleteFile(SD, "/py_res.html");
     // create the HTML header
-    WriteResultsHTML(LittleFS);
+    WriteResultsHTML(/*LittleFS*/SD);
   }
 }
 //
@@ -1579,6 +1820,13 @@ void ReadDeviceSetupFile(fs::FS &fs, const char * path)
   sprintf(deviceSettings.pass, buf);
   ReadLine(file, buf);
   deviceSettings.screenRotation = atoi(buf);
+  ReadLine(file, buf);
+  deviceSettings.stableBand[0] = atof(buf) / -2.0;
+  deviceSettings.stableBand[1] = atof(buf) / 2.0;
+  ReadLine(file, buf);
+  deviceSettings.stableDelay = atoi(buf);
+  ReadLine(file, buf);
+  deviceSettings.stableBuffer = atoi(buf);
   int temp = 0;
   ReadLine(file, buf);
   temp = atoi(buf);
@@ -1604,6 +1852,9 @@ void WriteDeviceSetupFile(fs::FS &fs, const char * path)
   file.println(deviceSettings.ssid);
   file.println(deviceSettings.pass);
   file.println(deviceSettings.screenRotation);
+  file.println(deviceSettings.stableBand[1] * 2.0);
+  file.println(deviceSettings.stableDelay);
+  file.println(deviceSettings.stableBuffer);
   file.println(deviceSettings.tempUnits ? 1 : 0);
   file.println(deviceSettings.is12Hour ? 1 : 0);
   file.println(deviceSettings.fontPoints);
@@ -1630,6 +1881,7 @@ void WriteDeviceSetupFile(fs::FS &fs, const char * path)
 //
 void WriteDeviceSetupHTML(fs::FS &fs, const char * path)
 {
+  Serial.println("Write device setup file");
   int selectedIndex = 0;
   char buf[512];
   DeleteFile(fs, path);
@@ -1696,12 +1948,37 @@ void WriteDeviceSetupHTML(fs::FS &fs, const char * path)
   file.println("<div class=\"dinput\" v-if=\"activeStage == 3\">");
   sprintf(buf, "<label for=\"orientation_id\">Screen Orientation (%s)</label>", (deviceSettings.screenRotation == 1 ? "R" : "L"));
   file.println(buf);
+
   file.println("<div><select id =\"orientation_id\" name=\"orientation_id\"><br>");
   sprintf(buf, "<option>%s</option>", (deviceSettings.screenRotation == 1 ? "R" : "L"));
   file.println(buf);
   file.println("<option>R</option>");  
   file.println("<option>L</option>");
   file.println("</select>");
+  file.println("</div>");
+  file.println("</p>");
+
+  file.println("<p>");
+  file.println("<div class=\"dinput\" v-if=\"activeStage == 3\">");
+  file.println(" <label for=\"bandwidth_id\">Temperature Stable Bandwidth</label>");
+  sprintf(buf, "<div><input type=\"text\" id =\"bandwidth_id\" name=\"bandwidth_id\" value = \"%f\"><br>", (deviceSettings.stableBand[1] * 2.0));
+  file.println(buf);
+  file.println("</div>");
+  file.println("</p>");
+
+  file.println("<p>");
+  file.println("<div class=\"dinput\" v-if=\"activeStage == 3\">");
+  file.println(" <label for=\"stablebuffer_id\">Temperature buffer</label>");
+  sprintf(buf, "<div><input type=\"text\" id =\"stablebuffer_id\" name=\"stablebuffer_id\" value = \"%d\"><br>", deviceSettings.stableBuffer);
+  file.println(buf);
+  file.println("</div>");
+  file.println("</p>");
+
+  file.println("<p>");
+  file.println("<div class=\"dinput\" v-if=\"activeStage == 3\">");
+  file.println(" <label for=\"stabledelay_id\">Temperature Stable Delay (ms)</label>");
+  sprintf(buf, "<div><input type=\"text\" id =\"stabledelay_id\" name=\"stabledelay_id\" value = \"%ld\"><br>", deviceSettings.stableDelay);
+  file.println(buf);
   file.println("</div>");
   file.println("</p>");
 
@@ -1862,17 +2139,18 @@ void WriteResultsHTML(fs::FS &fs)
         // add cells to file
         for(int p_idx = 0; p_idx < currentResultCar.positionCount; p_idx++)
         {
-          if(tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] >= currentResultCar.maxTemp[t_idx])
+          //if(tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] >= currentResultCar.maxTemp[t_idx])
+          //{
+          //  sprintf(buf, "<td bgcolor=\"red\">%0.2f</td>", tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+          //}
+          //else if(tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] <= tireMin)
+          //{
+          //  sprintf(buf, "<td bgcolor=\"cyan\">%0.2f</td>", tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
+          //}
+          //else 
+          if (tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] == tireMax)
           {
             sprintf(buf, "<td bgcolor=\"red\">%0.2f</td>", tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
-          }
-          else if(tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] <= tireMin)
-          {
-            sprintf(buf, "<td bgcolor=\"cyan\">%0.2f</td>", tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
-          }
-          else if (tireTemps[(t_idx * currentResultCar.positionCount) + p_idx] == tireMax)
-          {
-            sprintf(buf, "<td bgcolor=\"yellow\">%0.2f</td>", tireTemps[(t_idx * currentResultCar.positionCount) + p_idx]);
           }
           else
           {
@@ -1984,7 +2262,7 @@ void WriteResultsHTML(fs::FS &fs)
 
   #ifdef DEBUG_VERBOSE
   Serial.println("Done writing, readback");
-  fileIn = LittleFS.open("/py_res.html", FILE_READ);
+  fileIn = /*LittleFS*/SD.open("/py_res.html", FILE_READ);
   Serial.println("/py_res.html");
   while(true)
   {
@@ -2623,7 +2901,7 @@ void MeasureAllTireTemps()
   WriteMeasurementFile();
   tftDisplay.drawString("Updating results HTML...", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
-  WriteResultsHTML(LittleFS);  
+  WriteResultsHTML(/*LittleFS*/SD);  
   DisplayAllTireTemps(cars[selectedCar]);
 }
 //
@@ -2707,7 +2985,6 @@ float GetStableTemp(int positionIdx, int row, int col)
   Serial.println("Start GetStableTemp");
   char outStr[512];
   float minMax[2] = {5000.0, -5000.0};
-  float devRange[2] = {-0.25, 0.25};
   float averageTemp = 0;
   bool rVal = true;
   float temperature;
@@ -2717,11 +2994,11 @@ float GetStableTemp(int positionIdx, int row, int col)
   {
     for(int idx = 0; idx < 2; idx++)
     {
-      devRange[idx] = FtoCRelative(devRange[idx]);
+      deviceSettings.stableBand[idx] = FtoCRelative(deviceSettings.stableBand[idx]);
     }
   }
 
-  for(int idx = 0; idx < TEMP_BUFFER; idx++)
+  for(int idx = 0; idx < deviceSettings.stableBuffer; idx++)
   {
     tempValues[idx] = -100.0;
   }
@@ -2734,32 +3011,32 @@ float GetStableTemp(int positionIdx, int row, int col)
     tftDisplay.drawString(outStr, row, col, GFXFF);      
     SetFont(deviceSettings.fontPoints);
     // get average temp in circular buffer
-    if(countTemperature >= TEMP_BUFFER)
+    if(countTemperature >= deviceSettings.stableBuffer)
     {
       countTemperature = 0;
     }
     tempValues[countTemperature] = temperature;
     countTemperature++;
     averageTemp = 0.0;
-    for(int idx = 0; idx < TEMP_BUFFER; idx++)
+    for(int idx = 0; idx < deviceSettings.stableBuffer; idx++)
     {
       averageTemp += tempValues[idx];
     }
-    averageTemp = averageTemp / (float)TEMP_BUFFER;
+    averageTemp = averageTemp / (float)deviceSettings.stableBuffer;
     // check deviations, exit if within +/- 0.25
     minMax[0] = 5000.0;  
     minMax[1] = -5000.0;
-    for(int idx = 0; idx < TEMP_BUFFER; idx++)
+    for(int idx = 0; idx < deviceSettings.stableBuffer; idx++)
     {
       minMax[0] = (averageTemp - tempValues[idx]) < minMax[0] ? (averageTemp - tempValues[idx]) : minMax[0];
       minMax[1] = (averageTemp - tempValues[idx]) > minMax[1] ? (averageTemp - tempValues[idx]) : minMax[1];
     }
-    if(((minMax[1] - minMax[0]) >= devRange[0]) &&
-       ((minMax[1] - minMax[0]) <=  devRange[1]))
+    if(((minMax[1] - minMax[0]) >= deviceSettings.stableBand[0]) &&
+       ((minMax[1] - minMax[0]) <=  deviceSettings.stableBand[1]))
     {
       break;
     }
-    delay(500);
+    delay(deviceSettings.stableDelay);
   }
   return averageTemp;
 }
@@ -3061,7 +3338,7 @@ void Thermo_Setup()
   textPosition[1] += fontHeight;
 
 
-  for(int idx = 0; idx < TEMP_BUFFER; idx++)
+  for(int idx = 0; idx < deviceSettings.stableBuffer; idx++)
   {
     tempValues[idx] = -100.0;
   }

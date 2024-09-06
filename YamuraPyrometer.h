@@ -63,11 +63,14 @@
 #define SET_FLIPDISPLAY 2
 #define SET_FONTSIZE 3
 #define SET_12H24H 4
-#define SET_DELETEDATA 5
-#define SET_IPADDRESS 6
-#define SET_PASS 7
-#define SET_SAVESETTINGS 8
-#define SET_EXIT 9
+#define SET_STABLEBAND 5
+#define SET_STABLEDELAY 6
+#define SET_STABLEBUFFER 7
+#define SET_DELETEDATA 8
+#define SET_IPADDRESS 9
+#define SET_PASS 10
+#define SET_SAVESETTINGS 11
+#define SET_EXIT 12
 // font size menu
 #define FONTSIZE_9 0
 #define FONTSIZE_12 1
@@ -94,7 +97,7 @@
 #define BUTTON_PRESSED  1
 #define BUTTON_DEBOUNCE_DELAY   20   // ms
 #define FORMAT_LITTLEFS_IF_FAILED true
-#define TEMP_BUFFER 15
+//#define TEMP_BUFFER 15
 
 // car info structure
 struct CarSettings
@@ -124,6 +127,9 @@ struct DeviceSettings
   bool tempUnits = false; // true for C, false for F
   bool is12Hour = true;   // true for 12 hour clock, false for 24 hour clock
   int fontPoints = 12;    // size of font to use for display
+  float stableBand[2] = {-0.25, 0.25};
+  unsigned long stableDelay = 500;
+  int stableBuffer = 10;
 };
 // button debounce structure
 struct UserButton
@@ -209,6 +215,8 @@ void ChangeSettingsMenu();
 void Select12or24Menu();
 void SelectFontSizeMenu();
 void SetUnitsMenu();
+void SetStableBandwidthMenu();
+void SetStableDelayMenu();
 void DeleteDataFilesMenu(bool verify = true);
 int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSelect);
 // set date/time values

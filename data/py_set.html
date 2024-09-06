@@ -51,6 +51,21 @@
 </select>
 </div>
 </p>
+
+<p>
+<div class="dinput" v-if="activeStage == 3">
+ <label for="bandwidth_id">Temperature Stable Bandwidth</label>
+ <div><input type="text" id ="bandwidth_id" name="bandwidth_id" value = "0.5"><br>
+</div>
+</p>
+
+<p>
+<div class="dinput" v-if="activeStage == 3">
+ <label for="bandwidth_id">Temperature Stable Delay (ms)</label>
+ <div><input type="text" id ="stabledelay_id" name="stabledelay_id" value = "500"><br>
+</div>
+</p>
+
 <p>
 <div class="dinput" v-if="activeStage == 3">
 <label for="clock_id">Clock (12)</label>
