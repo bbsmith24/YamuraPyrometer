@@ -2989,23 +2989,25 @@ float GetStableTemp(int positionIdx, int row, int col)
   bool rVal = true;
   float temperature;
   int countTemperature = 0;
+  // assume the user put temp band in using correct units
   // convert deviation band to F if needed
-  if(deviceSettings.tempUnits == 0)
-  {
-    for(int idx = 0; idx < 2; idx++)
-    {
-      deviceSettings.stableBand[idx] = FtoCRelative(deviceSettings.stableBand[idx]);
-    }
-  }
-
+  //if(deviceSettings.tempUnits == 0)
+  //{
+  //  for(int idx = 0; idx < 2; idx++)
+  //  {
+  //    deviceSettings.stableBand[idx] = CtoCRelative(deviceSettings.stableBand[idx]);
+  //  }
+  //}
+  // set initial buffer temps to 15C or 60F
   for(int idx = 0; idx < deviceSettings.stableBuffer; idx++)
   {
-    tempValues[idx] = -100.0;
+    tempValues[idx] = deviceSettings.tempUnits == 0 ? 60.0 : 15.0;
   }
+  averageTemp = tempValues[0];
   while(true)
   {
     temperature = Thermo_GetTemp();
-    sprintf(outStr, "        %0.2f        ", temperature);
+    sprintf(outStr, "        %0.2f (%.2F)         ", temperature, averageTemp);
     // draw current temp
     tftDisplay.setFreeFont(FSS24); // max font
     tftDisplay.drawString(outStr, row, col, GFXFF);      
