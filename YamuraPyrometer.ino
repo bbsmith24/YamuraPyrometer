@@ -2446,7 +2446,7 @@ int MeasureTireTemps(int tireIdx)
       tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);      
       textPosition[1] += 2* fontHeight;
 
-      sprintf(outStr,"        ****                ");
+      sprintf(outStr,"        ****                          ");
       tftDisplay.setFreeFont(FSS24); // max font
       tftDisplay.drawString(outStr,textPosition[0], textPosition[1], GFXFF);      
       SetFont(deviceSettings.fontPoints);
@@ -2565,14 +2565,14 @@ void DrawTireMeasureGrid(int tireCount)
   int maxY = 0;
   for(int idx = 0; idx <= (tireCount/2 + tireCount%2); idx++)
   {
-    tftDisplay.drawWideLine(  gridLineH[idx][0][0], gridLineH[idx][0][1], gridLineH[idx][1][0], gridLineH[idx][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  gridLineH[idx][0][0], gridLineH[idx][0][1], gridLineH[idx][1][0], gridLineH[idx][1][1], 1, TFT_BLACK, TFT_WHITE);
     maxY = gridLineH[idx][0][1];
   }
   // vertical Lines
   for(int idx = 0; idx < 3; idx++)
   {
     gridLineV[idx][1][1] = maxY;
-    tftDisplay.drawWideLine(  gridLineV[idx][0][0], gridLineV[idx][0][1], gridLineV[idx][1][0], gridLineV[idx][1][1], 1, TFT_WHITE, TFT_BLACK);
+    tftDisplay.drawWideLine(  gridLineV[idx][0][0], gridLineV[idx][0][1], gridLineV[idx][1][0], gridLineV[idx][1][1], 1, TFT_BLACK, TFT_WHITE);
   }
 }
 //
@@ -3047,7 +3047,7 @@ float GetStableTemp(int positionIdx, int row, int col)
 //
 void YamuraBanner()
 {
-  tftDisplay.setTextColor(TFT_BLACK, TFT_RED);
+  tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
   SetFont(9);
   int xPos = tftDisplay.width()/2;
   int yPos = tftDisplay.height() - fontHeight/2;
