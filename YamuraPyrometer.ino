@@ -686,7 +686,7 @@ void SelectedResultsMenu(fs::FS &fs, const char * path)
 //
 void ChangeSettingsMenu()
 {
-  int menuCount = 12;
+  int menuCount = 13;
   int result =  0;
   MenuChoice settingsChoices[13];
   char buf[512];
@@ -711,11 +711,14 @@ void ChangeSettingsMenu()
     settingsChoices[SET_12H24H].description = "12 or 24 hour clock";
     settingsChoices[SET_12H24H].result = SET_12H24H;
     // temperature stabilization bandwidth
-    settingsChoices[SET_STABLEBAND].description = "Temp stablization bandwidth";
+    settingsChoices[SET_STABLEBAND].description = "Temp bandwidth";
     settingsChoices[SET_STABLEBAND].result = SET_STABLEBAND;
     // temperature stabilization delay
-    settingsChoices[SET_STABLEDELAY].description = "Temp stablization delay";
+    settingsChoices[SET_STABLEDELAY].description = "Temp delay";
     settingsChoices[SET_STABLEDELAY].result = SET_STABLEDELAY;
+    // temperature stabilization buffer
+    settingsChoices[SET_STABLEBUFFER].description = "Temp buffer";
+    settingsChoices[SET_STABLEBUFFER].result = SET_STABLEBUFFER;
     // delete data
     settingsChoices[SET_DELETEDATA].description = "Delete Data";
     settingsChoices[SET_DELETEDATA].result = SET_DELETEDATA;
@@ -863,12 +866,13 @@ void SetStableBandwidthMenu()
   // erase screen, draw banner
   tftDisplay.fillScreen(TFT_WHITE);
   YamuraBanner();
+  tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
   // display title
   SetFont(deviceSettings.fontPoints);
   // display menu
   textPosition[0] = 5;
   textPosition[1] = 0;
-  sprintf(outStr, "Temperature stabilization bandwidth:");
+  sprintf(outStr, "Temperature bandwidth");
   tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
 
@@ -928,12 +932,13 @@ void SetStableDelayMenu()
   // erase screen, draw banner
   tftDisplay.fillScreen(TFT_WHITE);
   YamuraBanner();
+  tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
   // display title
   SetFont(deviceSettings.fontPoints);
   // display menu
   textPosition[0] = 5;
   textPosition[1] = 0;
-  sprintf(outStr, "Temperature stabilization delay:");
+  sprintf(outStr, "Temperature delay");
   tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
@@ -990,6 +995,7 @@ void SetStableBufferMenu()
   // erase screen, draw banner
   tftDisplay.fillScreen(TFT_WHITE);
   YamuraBanner();
+  tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
   // display title
   SetFont(deviceSettings.fontPoints);
   // display menu
@@ -1021,7 +1027,7 @@ void SetStableBufferMenu()
       {
         continue;
       }
-      deviceSettings.stableDelay -= 1;
+      deviceSettings.stableBuffer -= 1;
       sprintf(outStr, "\t%ld", deviceSettings.stableBuffer);
       tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
       tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
@@ -1111,18 +1117,22 @@ int MenuSelect(int fontSize, MenuChoice choices[], int menuCount, int initialSel
     textPosition[1] = 0;
     for(int menuIdx = displayRange[0]; menuIdx <= displayRange[1]; menuIdx++)
     {
-      sprintf(outStr, "%s", choices[menuIdx].description.c_str());
+      //sprintf(outStr, "%s", choices[menuIdx].description.c_str());
       tftDisplay.fillRect(textPosition[0], textPosition[1], tftDisplay.width(), fontHeight, TFT_WHITE);
       if(menuIdx == selection)
       {
-        tftDisplay.setTextColor(TFT_BLACK, TFT_YELLOW);
-        tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+        //sprintf(outStr, ">%s", choices[menuIdx].description.c_str());
+        tftDisplay.setTextColor(TFT_WHITE, TFT_RED);
+        tftDisplay.drawString(">", textPosition[0], textPosition[1], GFXFF);
       }
-      else
-      {
+      //else
+      //{
+      textPosition[0] = fontWidth;
+        sprintf(outStr, "%s", choices[menuIdx].description.c_str());
         tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
         tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
-      }
+      //}
+      textPosition[0] = 0;
       textPosition[1] += fontHeight;
     }
     while(true)
@@ -3080,6 +3090,7 @@ void SetFont(int fontSize)
   }
   tftDisplay.setTextDatum(TL_DATUM);
   fontHeight = tftDisplay.fontHeight(GFXFF);
+  fontWidth = tftDisplay.textWidth("X");
 }
 //
 // COMMON FUNCTION DEFINITIONS

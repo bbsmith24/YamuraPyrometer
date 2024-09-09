@@ -181,6 +181,7 @@ String ampmStr[3] = {"am", "pm", "\0"};
 // TFT display
 TFT_eSPI tftDisplay = TFT_eSPI();
 int fontHeight;
+int fontWidth;
 int textPosition[2] = {5, 0};
 
 int carCount = 0;
