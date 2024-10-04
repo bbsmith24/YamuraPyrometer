@@ -42,8 +42,8 @@ void setup()
   //buttons[1].buttonPin = 14;  // down
   //buttons[2].buttonPin = 26;  // up
 
-  buttons[2].buttonPin = 14;  // up
-  buttons[1].buttonPin = 12;  // down
+  buttons[2].buttonPin = 12;  // up
+  buttons[1].buttonPin = 14;  // down
   buttons[0].buttonPin = 26;  // select
 
   // set up tft display
