@@ -97,26 +97,3 @@ Center
 I
 Inner
 ==========
-7
-Caius BMW Z3
-4
-LF
-Left Front
-100.00
-RF
-Right Front
-100.00
-RR
-Right Rear
-100.00
-LR
-Left Rear
-100.00
-3
-O
-Outer
-C
-Center
-I
-Inner
-==========

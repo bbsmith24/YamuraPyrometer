@@ -1600,6 +1600,7 @@ void WriteCarSetupFile(fs::FS &fs, const char * path)
   }
   Serial.println("Done");
   file.close();
+  Serial.println("Car setup data file closed");
   #endif
 }
 //
@@ -1811,6 +1812,7 @@ void WriteCarSetupHTML(fs::FS &fs, const char * path, int carIdx)
   }
   Serial.println("Done");
   file.close();
+  Serial.println("Car setup HTML file closed");
   #endif
 }
 //
@@ -1884,6 +1886,7 @@ void WriteDeviceSetupFile(fs::FS &fs, const char * path)
   }
   Serial.println("Done");
   file.close();
+  Serial.println("Device setup file closed");
   #endif
 }
 //
@@ -2052,6 +2055,7 @@ void WriteDeviceSetupHTML(fs::FS &fs, const char * path)
   }
   Serial.println("Done");
   file.close();
+  Serial.println("Device setup HTML file closed");
   #endif
 }
 //
@@ -2285,6 +2289,7 @@ void WriteResultsHTML(fs::FS &fs)
   }
   Serial.println("Done");
   fileIn.close();
+  Serial.println("Results HTML file closed");
   #endif
 
 }

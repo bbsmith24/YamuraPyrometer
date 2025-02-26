@@ -37,7 +37,7 @@
 
 // uncomment for debug to serial monitor (use #ifdef...#endif around debug output prints)
 #define DEBUG_VERBOSE
-//#define DEBUG_EXTRA_VERBOSE
+#define DEBUG_EXTRA_VERBOSE
 //#define DEBUG_HTML
 //#define SET_TO_SYSTEM_TIME
 // microSD chip reader select
@@ -97,7 +97,6 @@
 #define BUTTON_PRESSED  1
 #define BUTTON_DEBOUNCE_DELAY   20   // ms
 #define FORMAT_LITTLEFS_IF_FAILED true
-//#define TEMP_BUFFER 15
 
 // car info structure
 struct CarSettings
