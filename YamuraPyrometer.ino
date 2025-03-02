@@ -21,8 +21,7 @@
   3D printed box
 
   measurement records to microSD card
-  device and car definitions files stored on microSD card
-  HTML files for web interface in LittleFS
+    HTML files for web interface, device and car definitions files stored on microSD card
   wifi interface for display, up/down load (to add)
 */
 #include "YamuraPyrometer.h"
@@ -108,7 +107,6 @@ void setup()
   {
     pinMode(buttons[idx].buttonPin, INPUT_PULLUP);
   }
-  
   #ifdef DEBUG_VERBOSE
   Serial.println( " initializing LittleFS" );
   #endif
@@ -125,7 +123,6 @@ void setup()
   Serial.println("Files on LittleFS");
   ListDirectory(LittleFS, "/", 3);
   #endif
-
   #ifdef DEBUG_VERBOSE
   Serial.println( "initializing microSD" );
   #endif
@@ -140,7 +137,7 @@ void setup()
     if(failCount == 1)
     {
       tftDisplay.drawString("Initializing SD card", textPosition[0], textPosition[1], GFXFF);
-   }
+    }
     else if(failCount > 1)
     {
       sprintf(outStr, "microSD card mount failed after %d attempts", failCount);
@@ -164,6 +161,7 @@ void setup()
   Serial.println( "SD initialized" );
   Serial.println("Files on SD");
   ListDirectory(SD, "/", 3);
+  //delay(5000);
   #endif
 
   tftDisplay.drawString("Read device setup        ", textPosition[0], textPosition[1], GFXFF);
@@ -171,19 +169,20 @@ void setup()
   //textPosition[1] += fontHeight;
   ReadDeviceSetupFile(SD,  "/py_set.txt");
   WriteDeviceSetupHTML(SD, "/py_set.html");
-  //WriteDeviceSetupHTML(LittleFS, "/py_set.html");
 
   tftDisplay.drawString("Read cars setup          ", textPosition[0], textPosition[1], GFXFF);
-  delay(1000);
+  //delay(1000);
   //textPosition[1] += fontHeight;
+  Serial.println("Read /py_cars.txt");
   ReadCarSetupFile(SD,  "/py_cars.txt");
+  Serial.println("Write /py_cars.html");
   WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
-  //WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
 
   tftDisplay.drawString("Write results to HTML    ", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
+  Serial.println("Write results file to html");
   WriteResultsHTML(SD);
-  //WriteResultsHTML(LittleFS);
+  Serial.println("done");
 
   #ifdef HAS_RTC
   // get time from RTC
@@ -192,30 +191,29 @@ void setup()
   textPosition[1] += fontHeight;
   #endif
   deviceState = DISPLAY_MENU;
-
   
-  
-  #ifdef DEBUG_VERBOSE
-  ListDirectory(LittleFS, "/", 1);
-  #endif
-
   WiFi.softAP(deviceSettings.ssid, deviceSettings.pass);
   IP = WiFi.softAPIP();
   // Web Server Root URL
+  #ifdef DEBUG_VERBOSE
   Serial.println("starting webserver");
+  #endif
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    #ifdef DEBUG_VERBOSE
-    Serial.println("HTTP_GET, send /py_main.html from LittleFS");
-    #endif
-    request->send(/*LittleFS*/SD, "/py_main.html", "text/html");
+    request->send(SD, "/py_main.html", "text/html");
   });
-  
-  server.serveStatic("/", /*LittleFS*/SD, "/");
+  #ifdef DEBUG_VERBOSE
+  Serial.println("started!");
+  Serial.println("server.serveStatic");
+  #endif
+  server.serveStatic("/", SD, "/");
+  #ifdef DEBUG_VERBOSE
+  Serial.println("server.on");
+  #endif
   server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) 
   {
     #ifdef DEBUG_VERBOSE
-    Serial.println("HTTP_POST");
+    Serial.println("server.on handler");
     #endif
     int params = request->params();
     int pageSource = 0;
@@ -225,17 +223,13 @@ void setup()
     bool forceContinue = false;
     for(int i=0; i < params; i++)
     {
+      #ifdef DEBUG_VERBOSE
+      Serial.print("getting param ");
+      Serial.println(i);
+      #endif
       forceContinue = false;
       const AsyncWebParameter* p = request->getParam(i);
       
-      #ifdef DEBUG_VERBOSE
-      Serial.print(i);
-      Serial.print(": >");
-      Serial.print(p->name());
-      Serial.print("< >");
-      Serial.print(p->value().c_str());
-      Serial.println("<");
-      #endif
       // car settings
       if (strcmp(p->name().c_str(), "car_id") == 0)
       {
@@ -320,12 +314,10 @@ void setup()
         tempDevice.tempUnits = false;
         if(strcmp(p->value().c_str(), "C") == 0)
         {
-          Serial.println("C");
           tempDevice.tempUnits = true;
         }
         else
         {
-          Serial.println("F");
           tempDevice.tempUnits = false;
         }
         continue;
@@ -364,15 +356,21 @@ void setup()
       {
         tempDevice.is12Hour = true;
         int hourMode = atoi(p->value().c_str());
+        #ifdef DEBUG_VERBOSE
         Serial.println(hourMode);
+        #endif
         if(hourMode == 24)
         {
+          #ifdef DEBUG_VERBOSE
           Serial.println("24 hour clock");
+          #endif
           tempDevice.is12Hour = false;
         }
         else
         {
+          #ifdef DEBUG_VERBOSE
           Serial.println("12 hour clock");
+          #endif
           tempDevice.is12Hour = true;
         }
         continue;
@@ -391,6 +389,9 @@ void setup()
       }
       if (pageSource == 1) 
       {
+        #ifdef DEBUG_VERBOSE
+        Serial.println("pageSource 1");
+        #endif
         if(strcmp(p->name().c_str(), "update") == 0)
         {
           // update current car settings
@@ -409,8 +410,6 @@ void setup()
             strcpy(cars[carSetupIdx].positionShortName[posIdx], tempCar.positionShortName[posIdx]);
           }
           WriteCarSetupFile(SD, "/py_cars.txt");
-          //WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
-          //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
         }
         else if ((strcmp(p->name().c_str(), "new") == 0))
         {
@@ -445,8 +444,6 @@ void setup()
           strcpy(cars[carCount - 1].positionShortName[2], "-");
           strcpy(cars[carCount - 1].positionLongName[2], "-");
           WriteCarSetupFile(SD, "/py_cars.txt");
-          //WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
-          //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
         }
         else if ((strcmp(p->name().c_str(), "delete") == 0))
         {
@@ -461,25 +458,21 @@ void setup()
             cars = static_cast<CarSettings*>(mem);
           }
           WriteCarSetupFile(SD, "/py_cars.txt");
-          //WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
-          //WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
         }
         // buttons
         if (strcmp(p->name().c_str(), "next") == 0)
         {
           carSetupIdx = carSetupIdx + 1 < carCount ? carSetupIdx + 1 : carCount - 1;
-          //WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
           WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
-          request->send(/*LittleFS*/SD, "/py_cars.html", "text/html");
+          request->send(SD, "/py_cars.html", "text/html");
         }
         if (strcmp(p->name().c_str(), "prior") == 0)
         {
           carSetupIdx = carSetupIdx - 1 >= 0 ? carSetupIdx - 1 : 0;
-          //WriteCarSetupHTML(LittleFS, "/py_cars.html", carSetupIdx);
           WriteCarSetupHTML(SD, "/py_cars.html", carSetupIdx);
-          request->send(/*LittleFS*/SD, "/py_cars.html", "text/html");
+          request->send(SD, "/py_cars.html", "text/html");
         }
-        request->send(/*LittleFS*/SD, "/py_cars.html", "text/html");
+        request->send(SD, "/py_cars.html", "text/html");
       }
       else if (pageSource == 2)
       {
@@ -500,19 +493,40 @@ void setup()
           deviceSettings.is12Hour = tempDevice.is12Hour;
           deviceSettings.fontPoints = tempDevice.fontPoints;
           WriteDeviceSetupFile(SD, "/py_set.txt");
-          //WriteDeviceSetupHTML(LittleFS, "/py_set.html");
           WriteDeviceSetupHTML(SD, "/py_set.html");
-          request->send(/*LittleFS*/SD, "/py_set.html", "text/html");
+          request->send(SD, "/py_set.html", "text/html");
         }
       }
       else
       {
-        request->send(/*LittleFS*/SD, "/py_main.html", "text/html");
+        #ifdef DEBUG_VERBOSE
+        Serial.println("send /py_main.html");
+        #endif
+        request->send(SD, "/py_main.html", "text/html");
       }
     }
   });
+  #ifdef DEBUG_VERBOSE
+  Serial.println("done with handlers");
+  #endif
+  #ifdef DEBUG_VERBOSE
+  Serial.println("ElegantOTA.begin(&server);");
+  #endif
+  ElegantOTA.begin(&server);    // Start ElegantOTA
+
+  #ifdef DEBUG_VERBOSE
+  Serial.println("server.begin");
+  #endif
   server.begin();
   
+  #ifdef DEBUG_VERBOSE
+  Serial.println("ElegantOTA.setAutoReboot(true);");
+  #endif
+  ElegantOTA.setAutoReboot(true);
+
+  #ifdef DEBUG_VERBOSE
+  Serial.println("server setup complete?");
+  #endif
   sprintf(outStr, "IP %d.%d.%d.%d", IP[0], IP[1], IP[2], IP[3]);
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
@@ -521,7 +535,7 @@ void setup()
   textPosition[1] += fontHeight;
   SetupTireMeasureGrid(deviceSettings.fontPoints);
 
-  delay(5000);
+  //delay(5000);
   RotateDisplay(deviceSettings.screenRotation != 0);
 }
 //
@@ -770,7 +784,6 @@ void ChangeSettingsMenu()
       case SET_SAVESETTINGS:
         WriteDeviceSetupFile(SD, "/py_set.txt");
         WriteDeviceSetupHTML(SD, "/py_set.html");
-        //WriteDeviceSetupHTML(LittleFS, "/py_set.html");
         break;
       case SET_IPADDRESS:
         break;
@@ -1073,7 +1086,7 @@ void DeleteDataFilesMenu(bool verify)
     }
     DeleteFile(SD, "/py_res.html");
     // create the HTML header
-    WriteResultsHTML(/*LittleFS*/SD);
+    WriteResultsHTML(SD);
   }
 }
 //
@@ -1894,7 +1907,9 @@ void WriteDeviceSetupFile(fs::FS &fs, const char * path)
 //
 void WriteDeviceSetupHTML(fs::FS &fs, const char * path)
 {
+  #ifdef DEBUG_VERBOSE
   Serial.println("Write device setup file");
+  #endif
   int selectedIndex = 0;
   char buf[512];
   DeleteFile(fs, path);
@@ -2078,14 +2093,18 @@ void WriteResultsHTML(fs::FS &fs)
   fileOut = fs.open("/py_res.html", FILE_WRITE);
   if(!fileOut)
   {
+    #ifdef DEBUG_VERBOSE
     Serial.println("failed to open data HTML file /py_res.html");
+    #endif
     return;
   }
 
   fileOut.println("<!DOCTYPE html>");
   fileOut.println("<html>");
   fileOut.println("<head>");
-  fileOut.println("<title>Recording Pyrometer</title>");
+  fileOut.println("  <meta charset=\"UTF-8\">");
+  fileOut.println("	 <link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\">");
+  fileOut.println("  <title>Recording Pyrometer</title>");
   fileOut.println("</head>");
   fileOut.println("<body>");
   fileOut.println("<h1>Recorded Results</h1>");
@@ -2203,13 +2222,6 @@ void WriteResultsHTML(fs::FS &fs)
   fileOut.println("</table>");
   fileOut.println("</p>");
   fileOut.println("<p>");
-  fileOut.println("<button name=\"home\" type=\"submit\" value=\"home\"><a href=\"/py_main.html\">Home</a></button>");
-  fileOut.println("</p>");
-  // add copy button, raw results text and script
-  fileOut.println("<p>");
-  fileOut.println("<button onclick=\"copyResults()\">Copy data</button>");
-  fileOut.println("</p>");
-  fileOut.println("<p>");
   fileOut.println("<textarea id=\"rawTextResultsID\" rows=\"20\" cols=\"100\">");
   rowCount = 0;
   for (int dataFileCount = 0; dataFileCount < 100; dataFileCount++)
@@ -2262,6 +2274,13 @@ void WriteResultsHTML(fs::FS &fs)
   }
   fileOut.println("</textarea>");
   fileOut.println("</p>");
+  fileOut.println("<div>");
+  fileOut.println("<form>");
+  fileOut.println("<p>");
+  fileOut.println("<button name=\"home\" type=\"submit\" value=\"home\"><a href=\"/py_main.html\">Home</a></button>");
+  fileOut.println("<button onclick=\"copyResults()\">Copy data</button>");
+  fileOut.println("</p>");
+  fileOut.println("</form>");
   fileOut.println("</body>");
   fileOut.println("<script>");
   fileOut.println("function copyResults() {");
@@ -2276,7 +2295,7 @@ void WriteResultsHTML(fs::FS &fs)
 
   #ifdef DEBUG_VERBOSE
   Serial.println("Done writing, readback");
-  fileIn = /*LittleFS*/SD.open("/py_res.html", FILE_READ);
+  fileIn = SD.open("/py_res.html", FILE_READ);
   Serial.println("/py_res.html");
   while(true)
   {
@@ -2500,7 +2519,9 @@ int MeasureTireTemps(int tireIdx)
     measIdx++;
     drawStars = true;
   }
+  #ifdef DEBUG_VERBOSE
   Serial.println("Exit MeasureTireTemps");
+  #endif
   return 1;
 }
 //
@@ -2916,7 +2937,7 @@ void MeasureAllTireTemps()
   WriteMeasurementFile();
   tftDisplay.drawString("Updating results HTML...", textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
-  WriteResultsHTML(/*LittleFS*/SD);  
+  WriteResultsHTML(SD);  
   DisplayAllTireTemps(cars[selectedCar]);
 }
 //
@@ -2997,7 +3018,9 @@ void RotateDisplay(bool rotateButtons)
 //
 float GetStableTemp(int positionIdx, int row, int col)
 {
+  #ifdef DEBUG_VERBOSE
   Serial.println("Start GetStableTemp");
+  #endif
   char outStr[512];
   float minMax[2] = {5000.0, -5000.0};
   float averageTemp = 0;
@@ -3290,6 +3313,7 @@ void Thermo_Setup()
     while(1); //hang forever
   }
   tempSensor.setADCresolution(MCP9600_ADCRESOLUTION_18);
+  #ifdef DEBUG_VERBOSE
   Serial.print("ADC resolution set to ");
   switch (tempSensor.getADCresolution()) 
   {
@@ -3309,8 +3333,10 @@ void Thermo_Setup()
   Serial.println(" bits");
   //change the thermocouple type being used
   Serial.println("Setting Thermocouple Type!");
+  #endif
   tempSensor.setThermocoupleType(MCP9600_TYPE_K);
    //make sure the type was set correctly!
+  #ifdef DEBUG_VERBOSE
   switch(tempSensor.getThermocoupleType())
   {
     case MCP9600_TYPE_K:
@@ -3342,13 +3368,15 @@ void Thermo_Setup()
       break;
   }
   Serial.println(outStr);
+  #endif
   tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
   textPosition[1] += fontHeight;
 
   tempSensor.setFilterCoefficient(3);
+  #ifdef DEBUG_VERBOSE
   Serial.print("Thermocouple filter coefficient value set to: ");
   Serial.println(tempSensor.getFilterCoefficient());
-
+  #endif
 
   sprintf(outStr,"Temp: C: %0.2FC/%0.2FF H: %0.2FC/%0.2FF",tempSensor.readAmbient(), CtoFAbsolute(tempSensor.readAmbient()),
                                                            tempSensor.readThermocouple(), CtoFAbsolute(tempSensor.readThermocouple()));

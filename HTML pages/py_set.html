@@ -53,9 +53,27 @@
 </p>
 <p>
 <div class="dinput" v-if="activeStage == 3">
-<label for="clock_id">Clock (12)</label>
+ <label for="bandwidth_id">Temperature Stable Bandwidth</label>
+<div><input type="text" id ="bandwidth_id" name="bandwidth_id" value = "0.000000"><br>
+</div>
+</p>
+<p>
+<div class="dinput" v-if="activeStage == 3">
+ <label for="stablebuffer_id">Temperature buffer</label>
+<div><input type="text" id ="stablebuffer_id" name="stablebuffer_id" value = "12"><br>
+</div>
+</p>
+<p>
+<div class="dinput" v-if="activeStage == 3">
+ <label for="stabledelay_id">Temperature Stable Delay (ms)</label>
+<div><input type="text" id ="stabledelay_id" name="stabledelay_id" value = "1"><br>
+</div>
+</p>
+<p>
+<div class="dinput" v-if="activeStage == 3">
+<label for="clock_id">Clock (24)</label>
 <div><select id ="clock_id" name="clock_id"><br>
-<option>12</option>
+<option>24</option>
 <option>12</option>
 <option>24</option>
 </select>
@@ -63,9 +81,9 @@
 </p>
 <p>
 <div class="dinput" v-if="activeStage == 3">
-<label for="fontsize_id">Font Size (12)</label>
+<label for="fontsize_id">Font Size (0)</label>
 <div><select id ="fontsize_id" name="fontsize_id"><br>
-<option>12</option>
+<option>0</option>
 <option>9</option>
 <option>12</option>
 <option>18</option>

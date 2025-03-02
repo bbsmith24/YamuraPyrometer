@@ -17,6 +17,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <AsyncTCP.h>
+#include <ElegantOTA.h>          //
 #include <ESPAsyncWebServer.h>
 #include <TFT_eSPI.h>            // https://github.com/Bodmer/TFT_eSPI Graphics and font library for ST7735 driver chip
 #include "Free_Fonts.h"          // Include the header file attached to this sketch
@@ -37,7 +38,7 @@
 
 // uncomment for debug to serial monitor (use #ifdef...#endif around debug output prints)
 #define DEBUG_VERBOSE
-#define DEBUG_EXTRA_VERBOSE
+//#define DEBUG_EXTRA_VERBOSE
 //#define DEBUG_HTML
 //#define SET_TO_SYSTEM_TIME
 // microSD chip reader select
