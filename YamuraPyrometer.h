@@ -194,6 +194,11 @@ float tempRes = 1.0;
 // initial state of pyrometer (show main menu)
 int deviceState = 0;
 
+// files list
+String littleFSFileList[50];
+String sdFileList[500];
+
+// web server
 IPAddress IP;
 AsyncWebServer server(80);
 //
@@ -274,4 +279,5 @@ void CheckButtons(unsigned long curTime);
 void ReadLine(File file, char* buf);
 void AppendFile(fs::FS &fs, const char * path, const char * message);
 void DeleteFile(fs::FS &fs, const char * path);
-void ListDirectory(fs::FS &fs, const char * dirname, uint8_t levels);
+void ListDirectory(fs::FS &fs, const char * dirname, int &fileCount, String fileList[], uint8_t levels);
+void CopyFile(fs::FS &fsSource, const char * pathSource, fs::FS &fsTarget, const char * pathTarget, bool moveFile = true);

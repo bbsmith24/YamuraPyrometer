@@ -120,9 +120,19 @@ void setup()
   }
   #ifdef DEBUG_VERBOSE
   Serial.println( "LittleFS initialized" );
-  Serial.println("Files on LittleFS");
-  ListDirectory(LittleFS, "/", 3);
   #endif
+  int littleFSFileCount = 0;
+  ListDirectory(LittleFS, "/", littleFSFileCount, littleFSFileList, 3);
+  sprintf(outStr, "%d files on LittleFS", littleFSFileCount);
+  Serial.println(outStr);
+  Serial.println("from fileList...");
+  for(int fileIdx = 0; fileIdx < littleFSFileCount; fileIdx++)
+  {
+    Serial.println(littleFSFileList[fileIdx]);
+  }
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
+
   #ifdef DEBUG_VERBOSE
   Serial.println( "initializing microSD" );
   #endif
@@ -159,10 +169,29 @@ void setup()
   uint64_t cardSize = SD.cardSize() / (1024 * 1024);
   #ifdef DEBUG_VERBOSE
   Serial.println( "SD initialized" );
-  Serial.println("Files on SD");
-  ListDirectory(SD, "/", 3);
-  //delay(5000);
   #endif
+
+  // copy files from littleFS to SD (uploaded via ElegantOTA)
+  // delete files from littleFS
+  sprintf(outStr, "Deleting %d files on LittleFS", littleFSFileCount);
+  Serial.println(outStr);
+  Serial.println("from fileList...");
+  for(int fileIdx = 0; fileIdx < littleFSFileCount; fileIdx++)
+  {
+    CopyFile(LittleFS, littleFSFileList[fileIdx].c_str(), SD, littleFSFileList[fileIdx].c_str(), true);
+    DeleteFile(LittleFS, littleFSFileList[fileIdx].c_str());
+  }
+
+  Serial.println("Files on SD");
+  int sdFileCount = 0;
+  ListDirectory(SD, "/", sdFileCount, sdFileList, 3);
+  sprintf(outStr, "%d files on SD", sdFileCount);
+  Serial.println(outStr);
+  tftDisplay.drawString(outStr, textPosition[0], textPosition[1], GFXFF);
+  textPosition[1] += fontHeight;
+
+
+  //delay(5000);
 
   tftDisplay.drawString("Read device setup        ", textPosition[0], textPosition[1], GFXFF);
   delay(1000);
@@ -183,6 +212,8 @@ void setup()
   Serial.println("Write results file to html");
   WriteResultsHTML(SD);
   Serial.println("done");
+
+  
 
   #ifdef HAS_RTC
   // get time from RTC
@@ -1598,7 +1629,7 @@ void WriteCarSetupFile(fs::FS &fs, const char * path)
   }
   file.close();
   
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.println("Done writing, readback");
   file = fs.open(path, FILE_READ);
   Serial.println(path);
@@ -1811,7 +1842,7 @@ void WriteCarSetupHTML(fs::FS &fs, const char * path, int carIdx)
   file.println("</html>");
   file.close();
   delay(100);
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   file = fs.open(path, FILE_READ);
   Serial.println(path);
   while(true)
@@ -1884,7 +1915,7 @@ void WriteDeviceSetupFile(fs::FS &fs, const char * path)
   file.println(deviceSettings.is12Hour ? 1 : 0);
   file.println(deviceSettings.fontPoints);
   file.close();
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.println("Done writing, readback");
   file = fs.open(path, FILE_READ);
   Serial.println(path);
@@ -2055,7 +2086,7 @@ void WriteDeviceSetupHTML(fs::FS &fs, const char * path)
   file.println("</html>");
   file.close();
 
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.println("Done writing, readback");
   file = fs.open(path, FILE_READ);
   Serial.println(path);
@@ -2293,7 +2324,7 @@ void WriteResultsHTML(fs::FS &fs)
   fileOut.println("</html>");
   fileOut.close();
 
-  #ifdef DEBUG_VERBOSE
+  #ifdef DEBUG_EXTRA_VERBOSE
   Serial.println("Done writing, readback");
   fileIn = SD.open("/py_res.html", FILE_READ);
   Serial.println("/py_res.html");
@@ -3480,14 +3511,75 @@ void AppendFile(fs::FS &fs, const char * path, const char * message)
 //
 void DeleteFile(fs::FS &fs, const char * path)
 {
-  fs.remove(path);
+  if(!fs.remove(path))
+  {
+    Serial.print("failed to delete ");
+    Serial.println(path);
+  }
+  else
+  {
+    Serial.print("deleted ");
+    Serial.println(path);
+  }
 }
+//
+// copy a file
+// set moveFile to true to delete source when done, false to leave source
+// requires a file system of some kind = LittleFS or SD
+//
+void CopyFile(fs::FS &fsSource, const char * pathSource, fs::FS &fsTarget, const char * pathTarget, bool moveFile)
+{
+  byte copyBuffer[3000];
+  int copyBufferSpace = sizeof(copyBuffer);
+  int copyTargetSpace = 0;
+
+  File fileSource = fsSource.open(pathSource, FILE_READ);
+  File fileTarget = fsTarget.open(pathTarget, FILE_WRITE);
+  if((!fileSource) || (!fileTarget))
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.printf("One or more files failed to create %s, %s\n", pathSource, pathTarget);
+    #endif
+    return;
+  }
+  #ifdef DEBUG_VERBOSE
+    Serial.printf("Copy %s to %s\n", pathSource, pathTarget);
+  #endif
+  while (fileSource.available() > 0) 
+  {
+     copyBufferSpace = fileSource.read(copyBuffer, 3000);
+     copyTargetSpace = fileTarget.write(copyBuffer, copyBufferSpace);
+     if(copyBufferSpace != copyTargetSpace)
+     {
+       #ifdef DEBUG_VERBOSE
+       Serial.printf("Error copying from %s to %s\n", pathSource, pathTarget);
+       #endif
+       fileSource.close();
+       fileTarget.close();
+       fsSource.remove(pathTarget);
+       return;
+     }
+  }
+  fileSource.close();
+  fileTarget.close();
+  #ifdef DEBUG_VERBOSE
+  Serial.printf("Copy complete\n");
+  #endif
+  if(moveFile)
+  {
+    #ifdef DEBUG_VERBOSE
+    Serial.printf("Source file deleted %s\n", pathSource);
+    #endif
+    fsSource.remove(pathSource);
+  }
+}
+
 //
 // list files in folder
 // requires a file system of some kind = LittleFS or SD
 //
 
-void ListDirectory(fs::FS &fs, const char * dirname, uint8_t levels)
+void ListDirectory(fs::FS &fs, const char * dirname, int &fileCount, String fileList[], uint8_t levels)
 {
     Serial.printf("Listing directory: %s\r\n", dirname);
 
@@ -3503,17 +3595,24 @@ void ListDirectory(fs::FS &fs, const char * dirname, uint8_t levels)
 
     File file = root.openNextFile();
     while(file){
-        if(file.isDirectory()){
-            Serial.print("  DIR : ");
-            Serial.println(file.name());
-            if(levels){
-                ListDirectory(fs, file.path(), levels -1);
-            }
-        } else {
-            Serial.print("  FILE: ");
-            Serial.print(file.name());
-            Serial.print("\tSIZE: ");
-            Serial.println(file.size());
+        if(file.isDirectory())
+        {
+          Serial.print("  DIR : ");
+          Serial.println(file.name());
+          if(levels)
+          {
+            ListDirectory(fs, file.path(), fileCount, fileList, levels -1);
+          }
+        }
+        else 
+        {
+          //sprintf(fileList[fileCount], "%s", file.path());
+          fileList[fileCount] = String(file.path());
+          fileCount++;
+          Serial.print("  FILE: ");
+          Serial.print(file.name());
+          Serial.print("\tSIZE: ");
+          Serial.println(file.size());
         }
         file = root.openNextFile();
     }
