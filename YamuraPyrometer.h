@@ -25,6 +25,7 @@
 #include "LittleFS.h"
 #include "SD.h"
 #include "SPI.h" 
+#include <ESP32Time.h>
 // install correct thermocouple library
 #ifdef THERMO_MCP9600
 //#include <SparkFun_MCP9600.h>    // MPC9600 Thermocouple library https://github.com/sparkfun/SparkFun_MCP9600_Arduino_Library
@@ -35,7 +36,6 @@
 #endif
 // install correct RTC library
 #include "RTClib.h"              // PCF8563 RTC library https://github.com/adafruit/RTClib
-
 // uncomment for debug to serial monitor (use #ifdef...#endif around debug output prints)
 #define DEBUG_VERBOSE
 //#define DEBUG_EXTRA_VERBOSE
@@ -177,6 +177,8 @@ bool h12Flag;
 bool pmFlag;
 String days[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri","Sat"};
 String ampmStr[3] = {"am", "pm", "\0"};
+// for ESP32 internal clock (SD card timestamps)
+ESP32Time espInternalRTC;
 
 // TFT display
 TFT_eSPI tftDisplay = TFT_eSPI();

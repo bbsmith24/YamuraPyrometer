@@ -3283,7 +3283,10 @@ void RTC_SetDateTime(DateTime timeVal)
 //
 DateTime RTC_GetDateTime()
 {
-  return rtc.now();
+  DateTime now = rtc.now();
+  espInternalRTC.offset = 0;
+  espInternalRTC.setTime((int)now.second(), (int)now.minute(), (int)now.hour(), (int)now.day(), (int)now.month(), (int)now.year());
+  return now;
 }
 //
 // any initialization required for RTC module, return TRUE for sucess, FALSE for fail
@@ -3612,7 +3615,15 @@ void ListDirectory(fs::FS &fs, const char * dirname, int &fileCount, String file
           Serial.print("  FILE: ");
           Serial.print(file.name());
           Serial.print("\tSIZE: ");
-          Serial.println(file.size());
+          Serial.print(file.size());
+          time_t t = file.getLastWrite();
+          struct tm *tmstruct = localtime(&t);
+          Serial.printf(" %02d/%02d/%d %02d:%02d:%02d\n", (tmstruct->tm_mon) + 1, 
+                                                          tmstruct->tm_mday, 
+                                                          (tmstruct->tm_year) + 1900,
+                                                          tmstruct->tm_hour,
+                                                          tmstruct->tm_min, 
+                                                          tmstruct->tm_sec);
         }
         file = root.openNextFile();
     }
