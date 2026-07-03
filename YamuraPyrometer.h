@@ -37,7 +37,7 @@
 // install correct RTC library
 #include "RTClib.h"              // PCF8563 RTC library https://github.com/adafruit/RTClib
 // uncomment for debug to serial monitor (use #ifdef...#endif around debug output prints)
-#define DEBUG_VERBOSE
+//#define DEBUG_VERBOSE
 //#define DEBUG_EXTRA_VERBOSE
 //#define DEBUG_HTML
 //#define SET_TO_SYSTEM_TIME
