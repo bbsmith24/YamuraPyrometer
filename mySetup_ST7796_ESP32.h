@@ -89,8 +89,8 @@
 // fast and the TFT driver will not keep up and display corruption appears.
 // With an RPi ST7796 MH4.0 display 80MHz is OK for ESP32, 40MHz maximum for ESP8266
 
-//#define SPI_FREQUENCY  20000000
-#define SPI_FREQUENCY  40000000
+#define SPI_FREQUENCY  20000000
+//#define SPI_FREQUENCY  40000000
 //#define SPI_FREQUENCY  80000000
 
 // The ESP32 has 2 free SPI ports i.e. VSPI and HSPI, the VSPI is the default.

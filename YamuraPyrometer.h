@@ -98,7 +98,9 @@
 #define BUTTON_PRESSED  1
 #define BUTTON_DEBOUNCE_DELAY   20   // ms
 #define FORMAT_LITTLEFS_IF_FAILED true
-
+#define PIN_UP   14   // up
+#define PIN_DOWN 12   // down
+#define PIN_SELECT 26 // select
 // car info structure
 struct CarSettings
 {

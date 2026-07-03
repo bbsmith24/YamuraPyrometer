@@ -32,22 +32,33 @@ void setup()
 {
   char outStr[128];
   Serial.begin(115200);
+  delay(1000);
+  Serial.println("Yamura Recording Pyrometer");
+
   // location of text
   textPosition[0] = 5;
   textPosition[1] = 0;
 
   // user input buttons
-  //buttons[0].buttonPin = 12;  // select
-  //buttons[1].buttonPin = 14;  // down
-  //buttons[2].buttonPin = 26;  // up
+  buttons[2].buttonPin = PIN_UP;
+  buttons[1].buttonPin = PIN_DOWN;
+  buttons[0].buttonPin = PIN_SELECT;
 
-  buttons[2].buttonPin = 12;  // up
-  buttons[1].buttonPin = 14;  // down
-  buttons[0].buttonPin = 26;  // select
-
-  // set up tft display
+  pinMode(4, OUTPUT);
+  digitalWrite(4, LOW);
+  delay(100);
+  digitalWrite(4, HIGH);
+  delay(200);
+  
+  pinMode(SD_CS, OUTPUT);
+  digitalWrite(SD_CS, HIGH);  // deselect SD before TFT init
   tftDisplay.init();
+  // set up tft display
+  Serial.println("TFT init");
+  tftDisplay.init();
+  Serial.println("TFT invert");
   tftDisplay.invertDisplay(false);
+  Serial.println("TFT rotate");
   RotateDisplay(true);  
   int w = tftDisplay.width();
   int h = tftDisplay.height();
@@ -57,7 +68,9 @@ void setup()
   // 1 landscape pins right
   // 2 portrait pins up
   // 3 landscape pins left
+  Serial.println("TFT fillscreen");
   tftDisplay.fillScreen(TFT_WHITE);
+  Serial.println("Banner");
   YamuraBanner();
   SetFont(deviceSettings.fontPoints);
   tftDisplay.setTextColor(TFT_BLACK, TFT_WHITE);
@@ -2815,11 +2828,11 @@ void DisplayAllTireTemps(CarSettings currentResultCar)
       sprintf(outStr, "%3.1F", tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx]);
       if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == maxTemp)
       {
-        DrawCellText(row, col, outStr, TFT_BLACK, TFT_RED);
+        DrawCellText(row, col, outStr, TFT_WHITE, TFT_RED);
       }
       else if(tireTemps[(idxTire * currentResultCar.positionCount) + tirePosIdx] == minTemp)
       {
-        DrawCellText(row, col, outStr, TFT_BLACK, TFT_BLUE);
+        DrawCellText(row, col, outStr, TFT_WHITE, TFT_BLUE);
       }
       else
       {
